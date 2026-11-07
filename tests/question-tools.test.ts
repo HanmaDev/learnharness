@@ -311,6 +311,11 @@ describe("tool toggles (core/pending.ts + factories)", () => {
 		// quiz for the teach explain — one quizzing tool, whichever is armed.
 		const freeFull = ["ask_user_question", "demo", "exercise", "explain", "find", "grep", "html_preview", "ls", "pdf", "plan_init", "plan_progress", "read", "research", "show_image", "visual"];
 		assert.deepEqual(Object.keys(createTeacherTools(ctx, { explain: true })).sort(), freeFull);
+		// Fork: "tutor chooses" arms BOTH graded tools, in both phases.
+		const both = Object.keys(createTeacherTools(ctx, { mixedQuizzing: true } as never)).sort();
+		assert.ok(both.includes("quiz") && both.includes("explain"), `teacher carries both (got ${both.join(", ")})`);
+		const proberBoth = Object.keys(createProberTools({ chatId, chatStore, deliver: () => {}, jobStore, spawn: () => {} }, { mixedQuizzing: true } as never));
+		assert.ok(proberBoth.includes("probe") && proberBoth.includes("recall"), `prober carries both (got ${proberBoth.join(", ")})`);
 		assert.deepEqual(
 			Object.keys(createTeacherTools(ctx, { explain: true, research: false })).sort(),
 			freeFull.filter((t) => t !== "research"),

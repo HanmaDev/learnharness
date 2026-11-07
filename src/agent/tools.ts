@@ -314,7 +314,8 @@ export function createProberTools(
 	// differently-typed literals makes the whole object's type a union —
 	// unusable as Record<string, AgentTool<any>> downstream).
 	const quizzing: Record<string, AgentTool<any>> =
-		mechanics === "free" ? { recall: probeExplainTool } : { probe: probeQuizTool };
+		mechanics === "both" ? { probe: probeQuizTool, recall: probeExplainTool }
+		: mechanics === "free" ? { recall: probeExplainTool } : { probe: probeQuizTool };
 	// healToolRecord (owner, 2026-10-09 — the whitehead generalization):
 	// the standard argument heal over the WHOLE registry — every tool,
 	// not just the one the latest wobble incident landed on.
@@ -457,7 +458,9 @@ export interface TeacherToolContext extends PlanToolContext {
  *  managed, NOT individually toggleable: quiz/explain never pass through
  *  filterEnabledTools (the 2026-09-19 wedge ruling stands — a quiz-less
  *  prober collapses its assessment flow). */
-export function quizMechanics(enabled?: EnabledTools): "choice" | "free" {
+export function quizMechanics(enabled?: EnabledTools): "choice" | "free" | "both" {
+	// Fork: "both" — the tutor picks multiple choice or free recall per question.
+	if ((enabled as Record<string, boolean | undefined> | undefined)?.mixedQuizzing === true) return "both";
 	return enabled?.explain === true ? "free" : "choice";
 }
 
@@ -465,8 +468,8 @@ export function quizMechanics(enabled?: EnabledTools): "choice" | "free" {
  *  quizzing tools (the derivation above is their only switch). */
 function withoutMechanics(enabled?: EnabledTools): EnabledTools | undefined {
 	if (!enabled) return undefined;
-	const { explain: _e, quiz: _q, ...rest } = enabled;
-	return rest;
+	const { explain: _e, quiz: _q, mixedQuizzing: _m, ...rest } = enabled as Record<string, boolean | undefined>;
+	return rest as EnabledTools;
 }
 
 export function createTeacherTools(
@@ -480,7 +483,8 @@ export function createTeacherTools(
 	// Same widening as the prober's (see above) — the conditional spread of
 	// two differently-typed literals collapses into an unusable union type.
 	const quizzing: Record<string, AgentTool<any>> =
-		mechanics === "free" ? { explain: teachExplainToolFor(ctx) } : { quiz: teachQuizToolFor(ctx) };
+		mechanics === "both" ? { quiz: teachQuizToolFor(ctx), explain: teachExplainToolFor(ctx) }
+		: mechanics === "free" ? { explain: teachExplainToolFor(ctx) } : { quiz: teachQuizToolFor(ctx) };
 	// healToolRecord — same standard as the prober's registry (above).
 	return healToolRecord(
 		filterEnabledTools(

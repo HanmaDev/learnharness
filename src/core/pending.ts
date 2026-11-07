@@ -94,7 +94,9 @@ export const TOGGLEABLE_TOOLS = ["research", "demo", "visual", "pdf"] as const;
  *  free-recall quizzing and drops the MC quiz — see quizMechanics in
  *  agent/tools.ts; owner 2026-09-27). `quiz` itself stays unwritable:
  *  mechanics-managed, never individually toggleable. */
-export const WRITABLE_TOOL_KEYS = [...TOGGLEABLE_TOOLS, "explain"] as const;
+/** Fork: `mixedQuizzing: true` = the tutor chooses per question (both
+ *  quizzing tools armed); it wins over `explain`. */
+export const WRITABLE_TOOL_KEYS = [...TOGGLEABLE_TOOLS, "explain", "mixedQuizzing"] as const;
 
 /** The resolved settings → factory seam shape (Platform wires chat-handler
  *  to pass this through from the settings record; storage and defaults are

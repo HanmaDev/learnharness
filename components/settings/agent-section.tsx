@@ -142,8 +142,9 @@ export function composeRemoveFolder(agent: AgentSettings | undefined, folder: st
  *  free-recall (explain in, quiz out); anything else is multiple choice.
  *  `quiz` itself is never written (mechanics-managed — see quizMechanics
  *  in agent/tools.ts). Pure — exported for tests. */
-export function composeQuizMechanics(agent: AgentSettings | undefined, mechanics: "choice" | "free"): AgentSettings {
-	return { ...agent, tools: { ...agent?.tools, explain: mechanics === "free" } };
+export function composeQuizMechanics(agent: AgentSettings | undefined, mechanics: "choice" | "free" | "both"): AgentSettings {
+	// Fork: "both" = the tutor chooses per question (mixedQuizzing).
+	return { ...agent, tools: { ...agent?.tools, explain: mechanics === "free", mixedQuizzing: mechanics === "both" } };
 }
 
 /** Compose the prober graph-tools toggle (wave 7): its own key in the
@@ -800,7 +801,8 @@ export function AgentSection({
 				    quizzing tool BOTH agents carry (prober checks + teach checks).
 				    Persisted as agent.tools.explain; absent = Multiple choice. */}
 				{(() => {
-					const free = agent?.tools?.explain === true;
+					const tools = agent?.tools as Record<string, boolean | undefined> | undefined;
+					const current: "choice" | "free" | "both" = tools?.mixedQuizzing === true ? "both" : tools?.explain === true ? "free" : "choice";
 					return (
 						<SettingsRow
 							label="Quizzing"
@@ -812,8 +814,8 @@ export function AgentSection({
 								aria-label="Quizzing mechanics"
 								className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5"
 								>
-								{(["choice", "free"] as const).map((m) => {
-									const active = m === "free" ? free : !free;
+								{(["choice", "free", "both"] as const).map((m) => {
+									const active = m === current;
 									return (
 										<button
 											key={m}
@@ -827,7 +829,7 @@ export function AgentSection({
 												active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
 											)}
 										>
-											{m === "choice" ? "Multiple choice" : "Free recall"}
+											{m === "choice" ? "Multiple choice" : m === "free" ? "Free recall" : "Tutor chooses"}
 										</button>
 									);
 								})}

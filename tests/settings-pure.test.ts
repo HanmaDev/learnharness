@@ -411,4 +411,10 @@ describe("composeQuizMechanics (the segmented control's write)", () => {
 			assert.deepEqual(after.prompts, before.prompts, "the prompts map carries verbatim");
 		}
 	});
+	it("fork: tutor chooses writes mixedQuizzing:true, and the other two clear it", () => {
+		const both = composeQuizMechanics({} as AgentSettings, "both");
+		assert.equal((both.tools as Record<string, boolean>).mixedQuizzing, true);
+		assert.equal(both.tools?.explain, false);
+		assert.equal((composeQuizMechanics(both, "free").tools as Record<string, boolean>).mixedQuizzing, false);
+	});
 });

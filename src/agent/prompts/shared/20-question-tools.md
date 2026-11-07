@@ -26,3 +26,8 @@ Asks a single question and waits. He can always pick "Other" and type. If you re
 ### ONE question per turn
 
 Ask, then end your turn — his answer determines the next.
+
+**When you carry BOTH graded tools** (multiple choice and free recall — the learner set "Tutor chooses"), pick per question by what the question needs to measure:
+- **Free recall** when the understanding IS the ability to produce or explain it unprompted: a definition in his own words, why a step works, the next move in a derivation, recalling a fact without cues. Options would hand him the answer's shape.
+- **Multiple choice** when the point is discrimination between close alternatives, a quick calibration check, a prediction among a few concrete outcomes, or when typing a long answer would cost more than the check is worth.
+- Mix them across a node — recognition first is fine, but a node is not really done until he has produced it at least once. Never pick by habit.
