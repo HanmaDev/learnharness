@@ -58,7 +58,7 @@ import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
 import { SessionMessageNavigation } from "@/components/session-navigation";
-import { PracticeDock } from "@/components/practice-dock";
+import { HINT_REQUEST_PREFIX, PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
 import { GraphContextCard, type GraphContextData } from "@/components/graph-context-card";
 import { TopBar } from "@/components/top-bar";
@@ -1615,7 +1615,8 @@ export function Chat({
 													case "tool-probe":
 													case "tool-ask_user_question":
 													case "tool-explain":
-													case "tool-recall": {
+													case "tool-recall":
+													case "tool-exercise": {
 														const malformed = !busy && malformedQuestions.find(call => call.messageId === part.sourceMessageId && call.contentIndex === part.sourceContentIndex && call.toolCallId === part.toolCallId);
 														if (malformed) return <MalformedQuestion key={pi} disabled={!!pending || compacting}
 															reason={pending ? "Answer or discard the remaining question first." : undefined}
@@ -1723,6 +1724,8 @@ export function Chat({
 					initialQuestionDraft={pending ? questionDraft(pending.key)?.form : undefined}
 					onSaveQuestionDraft={(form) => { if (pending) saveQuestionDraft(pending.key, { form }); }}
 					practice={activeProblem}
+					practicePosedAt={activeProblem ? problemPosedAt(nativeMessages, activeProblem.toolCallId) : undefined}
+					practiceHints={activeProblem ? problemHintCount(nativeMessages, activeProblem.toolCallId) : 0}
 					compactionRunning={compacting}
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
@@ -1919,6 +1922,26 @@ export function lessonTexts(messages: readonly { parts?: readonly unknown[] }[],
 	return out;
 }
 
+/** Fork: when the problem call was posed (its assistant message's time). */
+export function problemPosedAt(messages: readonly LhMessage[], callId: string): number | undefined {
+	for (const m of messages) {
+		if (m.role !== "assistant") continue;
+		if (m.content.some((b) => b.type === "toolCall" && b.id === callId)) return m.timestamp;
+	}
+	return undefined;
+}
+
+/** Fork: hint requests already sent on this problem. */
+export function problemHintCount(messages: readonly LhMessage[], callId: string): number {
+	let n = 0;
+	for (const m of messages) {
+		if (m.role !== "custom" || m.customType !== "practice-thinking") continue;
+		const d = m.details as { problemCallId?: string; text?: string } | null;
+		if (d?.problemCallId === callId && typeof d.text === "string" && d.text.startsWith(HINT_REQUEST_PREFIX)) n++;
+	}
+	return n;
+}
+
 export function initialPromptOwed(messages: readonly { role: string }[], prompt: string | undefined): boolean {
 	if (!prompt) return false;
 	return !messages.some((m) => m.role === "user" || m.role === "assistant");
@@ -1984,6 +2007,8 @@ function DockOverlay({
 	initialQuestionDraft,
 	onSaveQuestionDraft,
 	practice,
+	practicePosedAt,
+	practiceHints,
 	compactionRunning,
 	onSubmitThinking,
 	requiresReveal,
@@ -2018,6 +2043,9 @@ function DockOverlay({
 	 *  {toolCallId, input} — dock ownership exactly like a pending
 	 *  question (the composer is replaced); null in teaching sessions. */
 	practice: { toolCallId: string; input: unknown } | null;
+	/** Fork: the active problem's pose time and hints used (record-derived). */
+	practicePosedAt?: number;
+	practiceHints?: number;
 	/** (commit, text) — the practice dock's two submit lanes. */
 	onSubmitThinking: (text: string) => void;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
@@ -2451,7 +2479,7 @@ function DockOverlay({
 						>
 							{pending ? (
 								<QuestionDock
-									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall"}
+									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "exercise"}
 									toolCallId={pending.toolCallId}
 									input={pending.input as never}
 									expanded={expanded}
@@ -2468,8 +2496,11 @@ function DockOverlay({
 								/>
 							) : practice ? (
 								<PracticeDock
+									key={practice.toolCallId}
 									problemCallId={practice.toolCallId}
 									input={practice.input as { statement: string }}
+									posedAt={practicePosedAt}
+									hintsUsed={practiceHints}
 									expanded={expanded}
 									onExpand={() => {
 										setExpanded(true);

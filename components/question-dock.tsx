@@ -11,6 +11,7 @@ import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { MarkdownInsideControl } from "@/components/md-blocks";
 import { TalkToTeacher } from "@/components/talk-to-teacher";
+import { ExerciseForm } from "@/components/exercise-form";
 import { cn } from "@/lib/utils";
 import {
 	buildAnswer,
@@ -27,6 +28,7 @@ import {
 	parseAskInput,
 	parseQuizInput,
 	parseExplainInput,
+	parseExerciseInput,
 	toggleOption,
 	toggleOther,
 	type AnswerRequest,
@@ -64,7 +66,7 @@ import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "exercise";
 	toolCallId: string;
 	input: QuizToolInput | AskToolInput | ExplainToolInput;
 	/** Collapse state, owned by the DockOverlay (it drives the shell's height morph). */
@@ -139,6 +141,38 @@ export function QuestionDock({
 	// bridge), so this is pure defense in depth — but it is STRUCTURAL now:
 	// anything that slips through renders the quiet fallback, never a
 	// crash on `.map` over model-authored bytes.
+	// Fork: the structured exercise formats have their own form.
+	if (canonical === "exercise") {
+		const exercise = parseExerciseInput(input);
+		if (!exercise) return <MalformedQuestion />;
+		return (
+			<>
+				{!expanded && (
+					<QuestionDockBar
+						toolName="quiz"
+						question={exercise.question}
+						onExpand={onExpand}
+						variant={reveal ? "reveal" : "collapsed"}
+						toolLabel="Exercise"
+						label={exercise.type === "predict" ? "Prediction" : undefined}
+					/>
+				)}
+				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
+					<ExerciseForm
+						input={exercise}
+						toolCallId={toolCallId}
+						onSubmit={onSubmit}
+						onEscape={onEscape}
+						dictationClaim={dictationClaim && !talkOpen}
+						compactionRunning={compactionRunning}
+					/>
+					{onTalk && (
+						<TalkToTeacher active={expanded} open={talkOpen} onOpenChange={setTalkOpen} onTalk={onTalk} disabled={compactionRunning} dictationClaim={dictationClaim} />
+					)}
+				</div>
+			</>
+		);
+	}
 	const parsed =
 		canonical === "quiz" ? parseQuizInput(input) : canonical === "explain" ? parseExplainInput(input) : parseAskInput(input);
 	if (!parsed) {

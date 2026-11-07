@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { exerciseInputObject, exerciseInputProblems } from "../core/exercise.ts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { invalidInputResult, questionResult, serverExecute } from "./tool-execute.ts";
 import {
@@ -392,6 +393,33 @@ export function teachQuizToolFor(ctx: Pick<PlanToolContext, "chatId" | "chatStor
 	};
 }
 
+/** Fork: the structured, app-graded teaching formats (core/exercise.ts) —
+ *  same teaching-cycle pair as the teach quiz, same nodeId check. */
+export function teachExerciseToolFor(ctx: Pick<PlanToolContext, "chatId" | "chatStore">): AgentTool<typeof exerciseInputObject> {
+	return {
+		name: "exercise",
+		label: "exercise",
+		description:
+			"Pose a structured, auto-graded exercise instead of multiple choice: `format` = blanks (fill numbered gaps " +
+			"{{1}} {{2}} in code/text — `template` + one `blanks` entry per gap with every accepted answer), order (`steps` " +
+			"in the CORRECT order; the learner sees them shuffled and reorders), find-mistake (numbered `lines` + the one " +
+			"wrong `mistakeLine`; he clicks it and says why in his thinking), or match (`pairs`; right sides shuffled). " +
+			"Set `language` when the content is code. The app grades instantly and returns an itemized result; " +
+			"`explanation` is revealed afterwards. Every call declares `type` (predict/check) and `nodeId` (validated " +
+			"against the plan map), like quiz. ONE question per turn: call a single exercise, then end your turn.",
+		parameters: exerciseInputObject,
+		prepareArguments: prepareQuestionArguments,
+		executionMode: "sequential",
+		execute: async (_toolCallId, input) => {
+			const problems = [...exerciseInputProblems(input)];
+			const nodeIdProblemText = nodeIdProblem(ctx, input.nodeId);
+			if (nodeIdProblemText) problems.push(nodeIdProblemText);
+			if (problems.length > 0) return invalidInputResult("exercise", problems);
+			return questionResult();
+		},
+	};
+}
+
 export interface TeacherToolContext extends PlanToolContext {
 	/** Job-tool wiring (sub-agent dispatch): the job store + the runner's
 	 *  spawn seam. The composition root injects both. */
@@ -451,6 +479,8 @@ export function createTeacherTools(
 			{
 			...quizzing,
 			ask_user_question: askUserQuestionTool,
+			// Fork: structured, app-graded formats (blanks/order/mistake/match).
+			exercise: teachExerciseToolFor(ctx),
 			// The learner-filesystem set is always-on (user-decided 2026-09,
 			// sources v1): the teacher locates and reads learner-referenced
 			// files on its own terms — nothing auto-injects. Read-only by

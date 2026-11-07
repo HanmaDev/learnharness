@@ -1,5 +1,7 @@
 "use client";
 
+import { ExerciseAnsweredBody } from "@/components/exercise-form";
+import { parseExerciseInput } from "@/src/core";
 import { useState } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
 import { GlyphMark } from "@/components/ui/glyph-mark";
@@ -33,7 +35,10 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 		);
 	}
 
-	const isQuiz = answer.kind === "quiz";
+	// Fork: exercises are graded like quizzes (chip, confidence, tucked why).
+	const isExercise = answer.kind === "exercise";
+	const isQuiz = answer.kind === "quiz" || isExercise;
+	const exerciseInput = isExercise ? parseExerciseInput(input) : undefined;
 	const isExplain = answer.kind === "explain";
 	const selectedIdx = new Set(answer.answers.map((a) => a.index));
 	const correctIdx = new Set(answer.correctIndices ?? []);
@@ -99,6 +104,8 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 					<ToolContentResponse>{parsedDetails}</ToolContentResponse>
 				</div>
 			)}
+
+			{isExercise && exerciseInput && answer.exercise && <ExerciseAnsweredBody input={exerciseInput} answer={answer.exercise} />}
 
 			{((answer.options?.length ?? 0) > 0 || answer.other) && (
 				<div className="flex flex-col gap-1.5 text-sm">

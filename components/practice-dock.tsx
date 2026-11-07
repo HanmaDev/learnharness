@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRightIcon, LightbulbIcon, TimerIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
@@ -35,7 +35,11 @@ export interface PracticeDockProps {
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string };
+	input: { statement: string; parts?: Array<{ label: string; statement: string }>; timeLimitMin?: number };
+	/** Fork: when the problem was posed (ms) — the timer's zero. */
+	posedAt?: number;
+	/** Fork: hints already asked for on this problem (from the record). */
+	hintsUsed?: number;
 	/** Collapse state, owned by the DockOverlay. */
 	expanded: boolean;
 	onExpand: () => void;
@@ -50,8 +54,39 @@ export interface PracticeDockProps {
 	compactionRunning?: boolean;
 }
 
-export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
+/** Fork: the hint request's fixed wording (the record counts hints by it). */
+export const HINT_REQUEST_PREFIX = "Hint please";
+
+export function hintRequestText(n: number): string {
+	return `${HINT_REQUEST_PREFIX} — give me the next hint (hint #${n}), just one step.`;
+}
+
+/** "12:05" from milliseconds. */
+export function formatClock(ms: number): string {
+	const total = Math.max(0, Math.floor(ms / 1000));
+	const h = Math.floor(total / 3600);
+	const m = Math.floor((total % 3600) / 60);
+	const s = total % 60;
+	return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
 	const [thinking, setThinking] = useState("");
+	// Fork: the part being answered, and the timer (teacher limit, or the learner's own).
+	const parts = input.parts && input.parts.length > 1 ? input.parts : null;
+	const [partIdx, setPartIdx] = useState(0);
+	const [timerOn, setTimerOn] = useState(input.timeLimitMin !== undefined);
+	const [limitMin, setLimitMin] = useState<number | null>(input.timeLimitMin ?? null);
+	const [editingLimit, setEditingLimit] = useState(false);
+	const [now, setNow] = useState(() => Date.now());
+	const startRef = useRef(posedAt ?? Date.now());
+	useEffect(() => {
+		if (!timerOn) return;
+		const id = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(id);
+	}, [timerOn]);
+	const elapsed = now - startRef.current;
+	const remaining = limitMin !== null ? limitMin * 60_000 - elapsed : null;
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
@@ -75,7 +110,14 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 		if (text.length === 0) return;
 		thinkingRef.current = "";
 		setThinking("");
-		onSubmit(text);
+		// Fork: tag the part and the elapsed time so the teacher can grade
+		// per part and report time.
+		const tags = [parts ? `(${parts[partIdx]!.label})` : "", `[elapsed ${formatClock(Date.now() - startRef.current)}]`].filter(Boolean).join(" ");
+		onSubmit(`${tags}\n${text}`);
+	};
+	const askHint = () => {
+		if (compactionRunning) return;
+		onSubmit(hintRequestText(hintsUsed + 1));
 	};
 
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): dictation
@@ -112,6 +154,88 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				<div className="lh-prose text-[15px]">
 					<ToolContentResponse>{input.statement}</ToolContentResponse>
 				</div>
+				{parts && (
+					<div data-testid="practice-parts" className="mt-2 flex flex-col gap-1.5">
+						{parts.map((p, i) => (
+							<button
+								key={p.label}
+								type="button"
+								data-testid={`practice-part-${p.label}`}
+								aria-pressed={i === partIdx}
+								onClick={() => setPartIdx(i)}
+								className={cn(
+									"flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
+									i === partIdx ? "border-primary bg-accent" : "border-border/60 hover:bg-accent/40",
+								)}
+							>
+								<span className="shrink-0 font-mono text-sm font-medium">({p.label})</span>
+								<span className="lh-prose min-w-0 flex-1 text-sm">
+									<ToolContentResponse>{p.statement}</ToolContentResponse>
+								</span>
+							</button>
+						))}
+					</div>
+				)}
+			</div>
+			{/* Fork: hints + timer row. */}
+			<div className="flex flex-wrap items-center gap-2 px-3 pt-1 text-xs text-muted-foreground">
+				<button
+					type="button"
+					data-testid="practice-hint"
+					disabled={compactionRunning}
+					onClick={askHint}
+					className="flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+				>
+					<LightbulbIcon className="size-3.5" />
+					{hintsUsed === 0 ? "Hint" : `Next hint (${hintsUsed} used)`}
+				</button>
+				<button
+					type="button"
+					data-testid="practice-timer-toggle"
+					aria-pressed={timerOn}
+					onClick={() => setTimerOn((v) => !v)}
+					className={cn("flex items-center gap-1 rounded-md border px-2 py-1 transition-colors hover:bg-accent", timerOn ? "border-primary/60 text-foreground" : "border-border/70")}
+				>
+					<TimerIcon className="size-3.5" />
+					{timerOn ? "Timer on" : "Timer"}
+				</button>
+				{timerOn && (
+					<span
+						data-testid="practice-clock"
+						className={cn(
+							"font-mono tabular-nums",
+							remaining !== null && remaining <= 60_000 && remaining > 0 && "text-amber-500",
+							remaining !== null && remaining <= 0 && "text-red-500",
+						)}
+					>
+						{remaining === null ? formatClock(elapsed) : remaining > 0 ? `${formatClock(remaining)} left` : `time's up (+${formatClock(-remaining)})`}
+					</span>
+				)}
+				{timerOn &&
+					(editingLimit ? (
+						<input
+							type="number"
+							min={1}
+							max={300}
+							autoFocus
+							data-testid="practice-limit-input"
+							defaultValue={limitMin ?? ""}
+							placeholder="min"
+							onBlur={(e) => {
+								const v = Number(e.target.value);
+								setLimitMin(Number.isFinite(v) && v >= 1 ? Math.min(300, Math.round(v)) : null);
+								setEditingLimit(false);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+							}}
+							className="w-14 rounded border border-border bg-transparent px-1 py-0.5"
+						/>
+					) : (
+						<button type="button" data-testid="practice-limit" onClick={() => setEditingLimit(true)} className="underline-offset-2 hover:underline">
+							{limitMin === null ? "set a limit" : `limit ${limitMin} min`}
+						</button>
+					))}
 			</div>
 
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
@@ -121,7 +245,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				className="m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 			>
 				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-					YOUR THINKING
+					{parts ? `YOUR THINKING · PART (${parts[partIdx]!.label})` : "YOUR THINKING"}
 				</div>
 				<PathInput
 					value={thinking}

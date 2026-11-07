@@ -60,14 +60,33 @@ export function ProblemCard({ part }: ArtifactPartProps) {
 	// statement — same container + eyebrow discipline as the answered card
 	// and the dock (which mirrors this in Slice D). The commitment never
 	// renders — only the call's statement.
-	const input = (part.input ?? {}) as { statement?: string };
+	const input = (part.input ?? {}) as { statement?: string; parts?: Array<{ label?: unknown; statement?: unknown }>; timeLimitMin?: unknown };
 	const statement = typeof input.statement === "string" ? input.statement : "";
+	// Fork: the parts and the time limit, when posed.
+	const parts = Array.isArray(input.parts)
+		? (input.parts.filter((p) => typeof p?.label === "string" && typeof p?.statement === "string") as Array<{ label: string; statement: string }>)
+		: [];
+	const limit = typeof input.timeLimitMin === "number" ? input.timeLimitMin : null;
 	return (
 		<div data-testid="problem-card" className="lh-card-enter my-1 rounded-xl border bg-card p-4">
-			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				Problem{limit !== null && <span className="ml-2 normal-case tracking-normal">· {limit} min</span>}
+			</div>
 			<div className="lh-prose text-[15px]">
 				<ToolContentResponse>{statement}</ToolContentResponse>
 			</div>
+			{parts.length > 0 && (
+				<div className="mt-2 flex flex-col gap-1">
+					{parts.map((p) => (
+						<div key={p.label} className="flex items-start gap-2 text-sm">
+							<span className="shrink-0 font-mono font-medium">({p.label})</span>
+							<span className="lh-prose min-w-0 flex-1">
+								<ToolContentResponse>{p.statement}</ToolContentResponse>
+							</span>
+						</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }
@@ -93,6 +112,13 @@ const OUTCOME_CHIP: Record<string, string> = {
 	dismissed: "bg-muted text-muted-foreground",
 };
 
+/** Fork: per-part outcome chips. */
+const PART_CHIP: Record<string, string> = {
+	solved: "bg-green-500/15 text-green-500",
+	partial: "bg-amber-500/15 text-amber-500",
+	unsolved: "bg-red-500/15 text-red-500",
+};
+
 export function ConcludeCard({ part }: ArtifactPartProps) {
 	// The conclusion redesigned (owner round, 2026-10-05): the SOLUTION is
 	// the hero — the modelSolution committed at pose time (part.reveal, the
@@ -100,7 +126,15 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 	// below in the quiz-explanation register (small, muted, low-key).
 	// Nothing collapsible. Legacy inputs (pre-slim records) that carry
 	// their own solutionReveal fall back to it.
-	const input = (part.input ?? {}) as { outcome?: string; verdict?: string; solutionReveal?: string };
+	const input = (part.input ?? {}) as {
+		outcome?: string; verdict?: string; solutionReveal?: string;
+		// Fork: per-part outcomes and time taken.
+		parts?: Array<{ label?: unknown; outcome?: unknown }>; timeSpentMin?: unknown;
+	};
+	const partRows = Array.isArray(input.parts)
+		? input.parts.filter((p) => typeof p?.label === "string" && typeof p?.outcome === "string") as Array<{ label: string; outcome: string }>
+		: [];
+	const timeSpent = typeof input.timeSpentMin === "number" && Number.isFinite(input.timeSpentMin) ? Math.round(input.timeSpentMin) : null;
 	const outcome = typeof input.outcome === "string" ? input.outcome : "";
 	const verdict = typeof input.verdict === "string" ? input.verdict : "";
 	const reveal =
@@ -129,6 +163,16 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 					</span>
 				)}
 			</div>
+			{(partRows.length > 0 || timeSpent !== null) && (
+				<div data-testid="conclude-parts" className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
+					{partRows.map((p) => (
+						<span key={p.label} className={cn("rounded px-1.5 py-0.5 font-mono", PART_CHIP[p.outcome] ?? PART_CHIP.unsolved)}>
+							({p.label}) {p.outcome}
+						</span>
+					))}
+					{timeSpent !== null && <span className="text-muted-foreground">· {timeSpent} min</span>}
+				</div>
+			)}
 			{/* The verdict — plain prose under the heading, no 'Verdict:' label
 			    (owner round 3): the same quiet 50% register as quiz explanations. */}
 			{verdict.length > 0 && (

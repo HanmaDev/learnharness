@@ -17,6 +17,7 @@
  * exited and resumed mid-question for free.
  */
 
+import type { ExerciseAnswer } from "./exercise.ts";
 import { Type, type Static } from "typebox";
 import { stripModelValueDebris } from "./value-debris.ts";
 
@@ -235,7 +236,7 @@ export function normalizeQuizType(raw: unknown): QuizQuestionType | undefined {
  *  truth. Records that predate the `type` field carry none — they render
  *  as checks, the standing default. */
 export function questionNeedsReveal(tool: string, rawInput: unknown, phase: string): boolean {
-	if ((tool !== "quiz" && tool !== "explain") || phase !== "teach") return false;
+	if ((tool !== "quiz" && tool !== "explain" && tool !== "exercise") || phase !== "teach") return false;
 	return normalizeQuizType((rawInput as { type?: unknown } | null)?.type) !== "predict";
 }
 
@@ -364,7 +365,7 @@ export function explainInputProblems(input: { correctAnswer: string }): string[]
 /** The tool names that carry the quizzing mechanic — the teach seam
  *  (phases), the plan-position fold, and the pending gate all recognize
  *  whichever is armed. */
-export const QUIZ_TOOL_NAMES = ["quiz", "explain"] as const;
+export const QUIZ_TOOL_NAMES = ["quiz", "explain", "exercise"] as const;
 
 /** The TEACHER's quiz declaration (base + the position field). */
 export const quizInputSchema = quizInputObject;
@@ -409,7 +410,8 @@ export interface OptionAnswer {
 	index: number; // 1-based display index
 }
 
-export type QuestionKind = "quiz" | "ask" | "explain";
+/** "exercise" (fork): the structured, app-graded formats — src/core/exercise.ts. */
+export type QuestionKind = "quiz" | "ask" | "explain" | "exercise";
 export type SelectMode = "single-select" | "multi-select";
 export type QuestionMode = SelectMode | "text";
 
@@ -476,6 +478,8 @@ export interface QuestionAnswerData {
 	/** Fork: dismissed because the learner chose "Talk to the teacher" —
 	 *  their message follows the result. */
 	setAside?: boolean;
+	/** Fork: the exercise format's response + grading (kind "exercise"). */
+	exercise?: ExerciseAnswer;
 	answeredAt: string;
 }
 
@@ -808,6 +812,8 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	// information the model needs for its next move. (dontKnow implies
 	// incorrect and carries no confidence: both stay implicit.)
 	if (ad.correct !== undefined && !ad.dontKnow) out.correct = ad.correct;
+	// Fork: the exercise's itemized result (which gaps/positions/pairs).
+	if (ad.kind === "exercise" && ad.exercise?.summary) Object.assign(out, ad.exercise.summary);
 	if (ad.confidence !== undefined) out.confidence = ad.confidence;
 	// Two DISTINCT thinking channels, clearly keyed so the model never
 	// conflates them (owner 2026-10-03): reasoning on the question vs

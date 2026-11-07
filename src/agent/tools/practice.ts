@@ -87,6 +87,19 @@ export const problemInputObject = Type.Object({
 				"Names are normalized to ids at the seam; an unknown proposition is rejected.",
 		}),
 	),
+	// Fork: multi-part problems and olympiad timing.
+	parts: Type.Optional(
+		Type.Array(
+			Type.Object({
+				label: Type.String({ description: "The part's label: a, b, c…" }),
+				statement: Type.String({ description: "The part's own question (markdown + LaTeX). The shared setup stays in `statement`." }),
+			}),
+			{ minItems: 2, maxItems: 8, description: "Optional parts (a), (b), (c)… — each answered and graded separately. Put every part's solution in modelSolution, labeled." },
+		),
+	),
+	timeLimitMin: Type.Optional(
+		Type.Number({ minimum: 1, maximum: 300, description: "Optional time limit in minutes (olympiad/competition conditions). The learner sees a countdown; it never blocks him." }),
+	),
 	modelSolution: Type.String({
 		description: "REQUIRED — the full solution, moves in order, committed BEFORE the learner sees the problem. This IS the reveal — conclude shows it verbatim; never re-author it. Renders markdown + LaTeX: code in fenced blocks with a language tag.",
 	}),
@@ -192,6 +205,17 @@ export const concludeInputObject = Type.Object({
 		{ description: "REQUIRED — the miss classification: cue, discrimination, execution, careless, or structural — or null = no miss (bare, no quotes)." },
 	),
 	retest: Type.Boolean({ description: "REQUIRED — true marks the problem for a fresh-surface retest before the session ends." }),
+	// Fork: per-part outcomes and the time taken.
+	parts: Type.Optional(
+		Type.Array(
+			Type.Object({
+				label: Type.String(),
+				outcome: Type.Union([Type.Literal("solved"), Type.Literal("partial"), Type.Literal("unsolved")]),
+			}),
+			{ description: "For a multi-part problem: each part's outcome (solved / partial / unsolved), same labels as the pose." },
+		),
+	),
+	timeSpentMin: Type.Optional(Type.Number({ minimum: 0, description: "Minutes the learner spent (read the latest [elapsed …] tag on his submissions)." })),
 });
 
 export type ConcludeInput = Static<typeof concludeInputObject>;

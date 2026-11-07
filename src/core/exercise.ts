@@ -1,0 +1,322 @@
+/**
+ * The `exercise` question tool (fork, 2026-11-07): structured, app-graded
+ * teaching questions beyond multiple choice — one tool, a `format` field:
+ *
+ *   blanks        fill numbered gaps {{1}} {{2}} in code or text
+ *   order         put shuffled steps back in order
+ *   find-mistake  click the wrong line (and say why in the thinking field)
+ *   match         connect each left item to its right item
+ *
+ * It carries the teaching-cycle pair (`type`, `nodeId`) exactly like quiz,
+ * so predict/check, the reveal, plan position and progress all work
+ * unchanged. Grading is pure and deterministic (this file); the model gets
+ * a compact, itemized result.
+ *
+ * NO value imports from question-core (it imports this file's values).
+ */
+import { Type, type Static } from "typebox";
+import type { QuestionAnswerData, QuizQuestionType } from "./question-core.ts";
+
+export const EXERCISE_FORMATS = ["blanks", "order", "find-mistake", "match"] as const;
+export type ExerciseFormat = (typeof EXERCISE_FORMATS)[number];
+
+const MD = " Renders markdown and LaTeX.";
+
+export const exerciseInputObject = Type.Object({
+	type: Type.Union([Type.Literal("predict"), Type.Literal("check")], {
+		description:
+			"REQUIRED — the role in the teaching cycle, a bare word: predict = before you teach the step (arrives open); " +
+			"check = after the step's teaching (arrives behind the Check your understanding reveal).",
+	}),
+	nodeId: Type.String({ description: "REQUIRED plan node id (exactly one of this session's plan_init slugs)." }),
+	format: Type.Union([Type.Literal("blanks"), Type.Literal("order"), Type.Literal("find-mistake"), Type.Literal("match")], {
+		description:
+			"REQUIRED — blanks (fill gaps in `template`), order (`steps` in the correct order; shown shuffled), " +
+			"find-mistake (`lines` + the 1-based `mistakeLine`), match (`pairs`; right sides shown shuffled).",
+	}),
+	question: Type.String({ description: "The instruction/question shown above the exercise." + MD }),
+	details: Type.Optional(Type.String({ description: "Optional extra context shown under the question." + MD })),
+	language: Type.Optional(
+		Type.String({ description: "Code language (sql, html, css, js, python, latex…) when the template/steps/lines are code; omit for prose." }),
+	),
+	template: Type.Optional(
+		Type.String({
+			description:
+				"blanks only: the text or code with numbered gaps {{1}}, {{2}}, … in reading order (each number once). " +
+				"Plain text, not markdown; newlines are kept.",
+		}),
+	),
+	blanks: Type.Optional(
+		Type.Array(
+			Type.Object({
+				accept: Type.Array(Type.String(), { minItems: 1, description: "Every accepted answer for this gap." }),
+				caseSensitive: Type.Optional(Type.Boolean({ description: "Default false (SQL keywords, tags)." })),
+			}),
+			{ description: "blanks only: one entry per gap, in gap-number order ({{1}} first)." },
+		),
+	),
+	steps: Type.Optional(
+		Type.Array(Type.String(), { minItems: 2, maxItems: 12, description: "order only: the steps/lines in the CORRECT order (2–12)." }),
+	),
+	lines: Type.Optional(
+		Type.Array(Type.String(), { minItems: 2, maxItems: 40, description: "find-mistake only: the numbered lines (code or derivation steps)." }),
+	),
+	mistakeLine: Type.Optional(Type.Integer({ minimum: 1, description: "find-mistake only: the 1-based number of the ONE wrong line." })),
+	pairs: Type.Optional(
+		Type.Array(
+			Type.Object({ left: Type.String(), right: Type.String() }),
+			{ minItems: 2, maxItems: 10, description: "match only: the correct pairs (2–10); right sides are shuffled for the learner." },
+		),
+	),
+	explanation: Type.String({
+		description:
+			"REQUIRED. Revealed after he answers (right or wrong): why the correct answer is correct. Written before you finish the call — reason first." + MD,
+	}),
+});
+
+export type ExerciseToolInput = Static<typeof exerciseInputObject>;
+
+/** Authoring problems the model must fix (returned to it at the call boundary). */
+export function exerciseInputProblems(input: ExerciseToolInput): string[] {
+	const problems: string[] = [];
+	if (!input.question.trim()) problems.push("question must not be empty.");
+	if (!input.explanation.trim()) problems.push("explanation must not be empty.");
+	switch (input.format) {
+		case "blanks": {
+			if (!input.template) {
+				problems.push("blanks needs `template` with numbered gaps {{1}}, {{2}}, ….");
+				break;
+			}
+			const nums = blankNumbers(input.template);
+			const count = input.blanks?.length ?? 0;
+			if (nums.length === 0) problems.push("template has no gaps — mark them {{1}}, {{2}}, ….");
+			const expected = nums.map((_, i) => i + 1);
+			if (nums.join(",") !== expected.join(",")) {
+				problems.push(`gaps must be numbered {{1}}..{{${nums.length}}} in reading order, each once (found ${nums.map((n) => `{{${n}}}`).join(" ")}).`);
+			}
+			if (count !== nums.length) problems.push(`blanks has ${count} entr${count === 1 ? "y" : "ies"} but the template has ${nums.length} gap(s) — one entry per gap.`);
+			input.blanks?.forEach((b, i) => {
+				if (b.accept.every((a) => !a.trim())) problems.push(`blanks[${i}] has no non-empty accepted answer.`);
+			});
+			break;
+		}
+		case "order":
+			if (!input.steps || input.steps.length < 2) problems.push("order needs `steps` (2–12) in the correct order.");
+			else if (new Set(input.steps.map((s) => s.trim())).size !== input.steps.length) problems.push("order steps must be distinct (identical lines make the order ambiguous).");
+			break;
+		case "find-mistake":
+			if (!input.lines || input.lines.length < 2) problems.push("find-mistake needs `lines` (2 or more).");
+			if (input.mistakeLine === undefined) problems.push("find-mistake needs `mistakeLine` (1-based).");
+			else if (input.lines && (input.mistakeLine < 1 || input.mistakeLine > input.lines.length)) {
+				problems.push(`mistakeLine ${input.mistakeLine} is outside 1..${input.lines.length}.`);
+			}
+			break;
+		case "match":
+			if (!input.pairs || input.pairs.length < 2) problems.push("match needs `pairs` (2–10).");
+			else {
+				if (new Set(input.pairs.map((p) => p.left.trim())).size !== input.pairs.length) problems.push("match left sides must be distinct.");
+				if (new Set(input.pairs.map((p) => p.right.trim())).size !== input.pairs.length) problems.push("match right sides must be distinct.");
+			}
+			break;
+	}
+	return problems;
+}
+
+/** Gap numbers in reading order ({{1}} {{2}} …). */
+export function blankNumbers(template: string): number[] {
+	return [...template.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
+}
+
+/** The template split into text runs and gap slots, for rendering. */
+export function templateSegments(template: string): Array<{ text: string } | { gap: number }> {
+	const out: Array<{ text: string } | { gap: number }> = [];
+	let last = 0;
+	for (const m of template.matchAll(/\{\{(\d+)\}\}/g)) {
+		if (m.index! > last) out.push({ text: template.slice(last, m.index) });
+		out.push({ gap: Number(m[1]) - 1 });
+		last = m.index! + m[0].length;
+	}
+	if (last < template.length) out.push({ text: template.slice(last) });
+	return out;
+}
+
+// ─── deterministic shuffling (seeded by the toolCallId, hydration-safe) ─────
+
+function seeded(seed: string): () => number {
+	let h = 2166136261;
+	for (let i = 0; i < seed.length; i++) {
+		h ^= seed.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	let a = h >>> 0;
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+/** A permutation of 0..n-1 that is never the identity when n >= 2 (an
+ *  already-solved order or match would give the answer away). */
+export function exerciseShuffle(n: number, seed: string): number[] {
+	const idx = Array.from({ length: n }, (_, i) => i);
+	const rand = seeded(seed);
+	for (let i = n - 1; i > 0; i--) {
+		const j = Math.floor(rand() * (i + 1));
+		[idx[i], idx[j]] = [idx[j]!, idx[i]!];
+	}
+	if (n >= 2 && idx.every((v, i) => v === i)) idx.push(idx.shift()!);
+	return idx;
+}
+
+// ─── responses and grading ───────────────────────────────────────────────────
+
+export type ExerciseResponse =
+	| { format: "blanks"; values: string[] }
+	/** Original step indices, in the learner's order. */
+	| { format: "order"; order: number[] }
+	/** 1-based line number. */
+	| { format: "find-mistake"; line: number }
+	/** For each left index: the pair index whose right side he chose (-1 = none). */
+	| { format: "match"; picks: number[] };
+
+export interface ExerciseResult {
+	correct: boolean;
+	/** 0..1 — the share of items right. */
+	score: number;
+	/** Per item: gaps, positions, the one line, or pairs. */
+	items: boolean[];
+}
+
+function normalizeAnswer(s: string, caseSensitive: boolean): string {
+	const t = s.trim().replace(/\s+/g, " ");
+	return caseSensitive ? t : t.toLowerCase();
+}
+
+export function gradeExercise(input: ExerciseToolInput, response: ExerciseResponse): ExerciseResult {
+	let items: boolean[] = [];
+	switch (input.format) {
+		case "blanks": {
+			const values = response.format === "blanks" ? response.values : [];
+			items = (input.blanks ?? []).map((b, i) => {
+				const given = normalizeAnswer(values[i] ?? "", b.caseSensitive === true);
+				return given.length > 0 && b.accept.some((a) => normalizeAnswer(a, b.caseSensitive === true) === given);
+			});
+			break;
+		}
+		case "order": {
+			const order = response.format === "order" ? response.order : [];
+			items = (input.steps ?? []).map((_, pos) => order[pos] === pos);
+			break;
+		}
+		case "find-mistake":
+			items = [response.format === "find-mistake" && response.line === input.mistakeLine];
+			break;
+		case "match": {
+			const picks = response.format === "match" ? response.picks : [];
+			items = (input.pairs ?? []).map((_, i) => picks[i] === i);
+			break;
+		}
+	}
+	const right = items.filter(Boolean).length;
+	return { correct: items.length > 0 && right === items.length, score: items.length ? right / items.length : 0, items };
+}
+
+/** The itemized result the TEACHER reads (compact, no rendering data). */
+export function exerciseResultForModel(input: ExerciseToolInput | undefined, response: ExerciseResponse | undefined, result: ExerciseResult | undefined): Record<string, unknown> {
+	if (!input || !response || !result) return {};
+	const out: Record<string, unknown> = { format: input.format, correct: result.correct, score: Math.round(result.score * 100) / 100 };
+	switch (input.format) {
+		case "blanks":
+			if (response.format === "blanks") {
+				out.gaps = (input.blanks ?? []).map((b, i) => ({
+					given: response.values[i] ?? "",
+					ok: result.items[i] === true,
+					...(result.items[i] ? {} : { expected: b.accept[0] }),
+				}));
+			}
+			break;
+		case "order":
+			if (response.format === "order") {
+				out.givenOrder = response.order.map((i) => input.steps?.[i] ?? "");
+				out.positionsRight = result.items.filter(Boolean).length;
+			}
+			break;
+		case "find-mistake":
+			if (response.format === "find-mistake") {
+				out.chosenLine = response.line;
+				out.chosenText = input.lines?.[response.line - 1] ?? "";
+				if (!result.correct) out.mistakeLine = input.mistakeLine;
+			}
+			break;
+		case "match":
+			if (response.format === "match") {
+				out.pairs = (input.pairs ?? []).map((p, i) => ({
+					left: p.left,
+					chose: response.picks[i] !== undefined && response.picks[i]! >= 0 ? input.pairs?.[response.picks[i]!]?.right ?? "" : "",
+					ok: result.items[i] === true,
+				}));
+			}
+			break;
+	}
+	return out;
+}
+
+/** Is the response complete enough to submit? */
+export function exerciseResponseComplete(input: ExerciseToolInput, response: ExerciseResponse | null): boolean {
+	if (!response) return false;
+	switch (response.format) {
+		case "blanks":
+			return (input.blanks ?? []).every((_, i) => (response.values[i] ?? "").trim().length > 0);
+		case "order":
+			return response.order.length === (input.steps?.length ?? 0);
+		case "find-mistake":
+			return response.line >= 1;
+		case "match":
+			return (input.pairs ?? []).every((_, i) => (response.picks[i] ?? -1) >= 0);
+	}
+}
+
+// ─── the answer record ───────────────────────────────────────────────────────
+
+
+/** The exercise slice of QuestionAnswerData (render + model summary). */
+export interface ExerciseAnswer {
+	format: ExerciseFormat;
+	response: ExerciseResponse;
+	result: ExerciseResult;
+	/** The compact itemized result the model reads (precomputed with the input). */
+	summary: Record<string, unknown>;
+}
+
+export function buildExerciseAnswer(
+	input: ExerciseToolInput,
+	req: { response: ExerciseResponse | null; dontKnow?: boolean; thinking?: string; readingThinking?: string; confidence?: number },
+	tool = "exercise",
+): QuestionAnswerData {
+	const dontKnow = req.dontKnow === true || !req.response;
+	const base: QuestionAnswerData = {
+		kind: "exercise",
+		tool,
+		questionType: input.type as QuizQuestionType,
+		questionText: input.question,
+		dontKnow,
+		answers: [],
+		thinking: req.thinking?.trim() || undefined,
+		readingThinking: req.readingThinking?.trim() || undefined,
+		explanation: input.explanation,
+		answeredAt: new Date().toISOString(),
+	};
+	if (dontKnow) {
+		base.correct = false;
+		return base;
+	}
+	const response = req.response!;
+	const result = gradeExercise(input, response);
+	base.correct = result.correct;
+	base.exercise = { format: input.format, response, result, summary: exerciseResultForModel(input, response, result) };
+	if (req.confidence !== undefined) base.confidence = Math.max(0, Math.min(100, Math.round(req.confidence)));
+	return base;
+}

@@ -31,6 +31,7 @@ import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 import { quizDisplayInputSchema, askInputSchema, askOptionProblems, quizInputProblems, explainInputProblems, explainDisplayInputSchema, type AskToolInput, type QuizToolInput, type ExplainToolInput } from "./question-core.ts";
 import { healEncodedArguments } from "./argument-heal.ts";
+import { exerciseInputObject, exerciseInputProblems, type ExerciseToolInput } from "./exercise.ts";
 import { probeDoneInputSchema, type ProbeDoneInput } from "./contracts/probe.ts";
 
 /** The pi-boundary parse step, mirrored here (live-smoke fix, 2026-09-26):
@@ -113,6 +114,14 @@ export function parseExplainInput(input: unknown): ExplainToolInput | undefined 
 	return cleaned;
 }
 
+/** Fork: the exercise parse for display — schema + authoring problems. */
+export function parseExerciseInput(input: unknown): ExerciseToolInput | undefined {
+	const cleaned = boundaryParse<ExerciseToolInput>(exerciseInputObject, healEncodedArguments(input, exerciseInputObject));
+	if (!cleaned) return undefined;
+	if (exerciseInputProblems(cleaned).length > 0) return undefined;
+	return cleaned;
+}
+
 /** One display-validity decision for dock authority and recovery. Does not
  * mutate the recorded input or invent missing authoring fields. */
 export function parseQuestionInput(tool: string, input: unknown): QuizToolInput | AskToolInput | ExplainToolInput | undefined {
@@ -120,6 +129,7 @@ export function parseQuestionInput(tool: string, input: unknown): QuizToolInput 
 		case "quiz": case "probe": return parseQuizInput(input);
 		case "explain": case "recall": return parseExplainInput(input);
 		case "ask_user_question": return parseAskInput(input);
+		case "exercise": return parseExerciseInput(input) as never;
 		default: return undefined;
 	}
 }
