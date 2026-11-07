@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CalendarIcon, XIcon } from "lucide-react";
-import { computePlanProgress, formatStudyTime, localDate, type LhMessage, type PlanProgress, type PlanTarget, type PlanTree } from "@/src/core";
+import { computePlanProgress, formatStudyTime, localDate, MIN_MEASURED_STEPS, type LhMessage, type PlanProgress, type PlanTarget, type PlanTree } from "@/src/core";
 import { cn } from "@/lib/utils";
 
 /**
@@ -110,7 +110,7 @@ export function PlanProgressPanel({
 				<span>
 					Time left:{" "}
 					<span className="text-foreground" data-testid="plan-time-left">
-						{p.pace === "complete" ? "none" : p.remainingMs !== null ? `~${formatStudyTime(p.remainingMs)}` : "after your first finished node"}
+						{p.pace === "complete" ? "none" : p.remainingMs !== null ? `~${formatStudyTime(p.remainingMs)}` : `after ${MIN_MEASURED_STEPS} measured steps (${p.measuredDone} so far)`}
 					</span>
 				</span>
 				{p.target && p.daysLeft !== null && p.pace !== "past" && p.pace !== "complete" && (

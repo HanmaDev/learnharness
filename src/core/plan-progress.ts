@@ -27,6 +27,8 @@ export interface PlanTarget {
 
 /** Gaps longer than this between messages are breaks, not study time. */
 export const STUDY_GAP_MS = 15 * 60_000;
+/** The time-left estimate appears only after this many MEASURED done steps. */
+export const MIN_MEASURED_STEPS = 3;
 const DAY_MS = 24 * 60 * 60_000;
 
 export function isPlanDate(value: unknown): value is string {
@@ -82,6 +84,18 @@ export function deriveDoneNodes(tree: PlanTree, messages: readonly LhMessage[]):
 	return done;
 }
 
+/** Nodes actually TAUGHT in this record: at least one graded question
+ *  (quiz / explain / exercise) was tagged with the node. A step marked done
+ *  without any (e.g. a catch-up note after lost history) was not measured
+ *  here, so it never enters the pace average. */
+export function taughtNodes(messages: readonly LhMessage[]): Set<string> {
+	const out = new Set<string>();
+	for (const name of ["quiz", "explain", "exercise"]) {
+		for (const { args } of toolCalls(messages, name)) if (typeof args.nodeId === "string") out.add(args.nodeId);
+	}
+	return out;
+}
+
 /** When studying the plan began: the first plan_init call's message time. */
 export function planStartMs(messages: readonly LhMessage[]): number | null {
 	for (const { timestamp } of toolCalls(messages, "plan_init")) if (timestamp > 0) return timestamp;
@@ -120,10 +134,13 @@ export interface PlanProgress {
 	percent: number;
 	doneIds: ReadonlySet<string>;
 	studyMs: number;
-	/** Average study time per finished node; null before the first. */
+	/** Average study time per MEASURED finished node; null until there are
+	 *  MIN_MEASURED_STEPS of them. */
 	perNodeMs: number | null;
-	/** Estimated study time left; null before the first finished node. */
+	/** Estimated study time left; null until MIN_MEASURED_STEPS measured steps. */
 	remainingMs: number | null;
+	/** Done steps that were actually taught here (they drive the estimate). */
+	measuredDone: number;
 	target: PlanTarget | null;
 	/** Calendar days until the target, counting today as a study day (>= 1
 	 *  while the date is today or later); null without a target. Negative
@@ -153,7 +170,10 @@ export function computePlanProgress(input: {
 	const percent = total > 0 ? Math.round((done / total) * 100) : 0;
 	const start = planStartMs(messages);
 	const studyMs = start === null ? 0 : studyTimeMs(messages, start, now);
-	const perNodeMs = done > 0 && studyMs > 0 ? studyMs / done : null;
+	// The pace counts only steps taught in this record (catch-up marks don't).
+	const taught = taughtNodes(messages);
+	const measuredDone = [...doneIds].filter((id) => taught.has(id)).length;
+	const perNodeMs = measuredDone >= MIN_MEASURED_STEPS && studyMs > 0 ? studyMs / measuredDone : null;
 	const left = total - done;
 	const remainingMs = perNodeMs === null ? null : perNodeMs * left;
 
@@ -178,7 +198,7 @@ export function computePlanProgress(input: {
 		}
 	} else if (left === 0 && total > 0) pace = "complete";
 
-	return { total, done, percent, doneIds, studyMs, perNodeMs, remainingMs, target, daysLeft, nodesPerDay, minutesPerDayNeeded, minutesPerDaySoFar, pace };
+	return { total, done, percent, doneIds, studyMs, perNodeMs, remainingMs, measuredDone, target, daysLeft, nodesPerDay, minutesPerDayNeeded, minutesPerDaySoFar, pace };
 }
 
 /** `now` as the learner's local YYYY-MM-DD. */
@@ -201,7 +221,7 @@ export function formatStudyTime(ms: number): string {
 export function planProgressText(p: PlanProgress): string {
 	const parts = [`Done ${p.done}/${p.total} nodes (${p.percent}%).`, `Study time so far: ${formatStudyTime(p.studyMs)}.`];
 	if (p.remainingMs !== null) parts.push(`Estimated study time left: ${formatStudyTime(p.remainingMs)} (at ${formatStudyTime(p.perNodeMs!)} per node).`);
-	else if (p.done === 0) parts.push("No time estimate until the first node is done.");
+	else if (p.pace !== "complete") parts.push(`No time estimate yet: it needs ${MIN_MEASURED_STEPS} steps finished with questions in this chat (${p.measuredDone} so far).`);
 	if (p.target) {
 		parts.push(`Target date: ${p.target.date} (set by the ${p.target.setBy}).`);
 		if (p.pace === "past") parts.push("The target date has passed.");

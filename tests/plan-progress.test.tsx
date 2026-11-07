@@ -73,38 +73,51 @@ describe("plan progress — pure core", () => {
 	});
 
 	it("progress, time left and pace toward the target", () => {
-		// Plan starts at T0; 60 min of study; 2 of 4 nodes done.
+		// Plan starts at T0; 60 min of study; 3 of 4 nodes taught (tagged questions) and done.
 		const messages = [
 			...call("plan_init", { mermaid: "x" }, T0),
+			...call("quiz", { nodeId: "a" }, T0 + MIN),
+			...call("quiz", { nodeId: "b" }, T0 + 2 * MIN),
+			...call("exercise", { nodeId: "c" }, T0 + 3 * MIN),
 			...Array.from({ length: 12 }, (_, i) => user(T0 + (i + 1) * 5 * MIN)),
-			...call("plan_progress", { done: ["a", "b"] }, T0 + 60 * MIN),
+			...call("plan_progress", { done: ["a", "b", "c"] }, T0 + 60 * MIN),
 		];
 		const now = T0 + 61 * MIN;
 		const p = computePlanProgress({ tree, messages, target: { date: "2026-11-08", setBy: "learner", at: "x" }, now });
-		assert.equal(p.done, 2);
+		assert.equal(p.done, 3);
+		assert.equal(p.measuredDone, 3);
 		assert.equal(p.total, 4);
-		assert.equal(p.percent, 50);
+		assert.equal(p.percent, 75);
 		assert.ok(Math.abs(p.studyMs - 61 * MIN) < 2 * MIN, `study ≈ 61 min (got ${p.studyMs / MIN})`);
-		assert.ok(p.remainingMs !== null && Math.abs(p.remainingMs - p.studyMs) < 1, "2 nodes left at the same per-node rate");
+		assert.ok(p.remainingMs !== null && Math.abs(p.remainingMs - p.studyMs / 3) < 1, "1 node left at the measured per-node rate");
 		assert.equal(p.daysLeft, 2, "today + tomorrow");
-		assert.equal(p.nodesPerDay, 1);
-		assert.equal(p.pace, "on-track", "61 min/day so far vs ~31 min/day needed");
+		assert.equal(p.nodesPerDay, 0.5);
+		assert.equal(p.pace, "on-track", "61 min/day so far vs ~10 min/day needed");
 		const tight = computePlanProgress({ tree, messages, target: { date: "2026-11-07", setBy: "teacher", at: "x" }, now });
 		assert.equal(tight.daysLeft, 1);
 		assert.equal(tight.pace, "on-track", "exactly enough today");
 		const past = computePlanProgress({ tree, messages, target: { date: "2026-11-06", setBy: "teacher", at: "x" }, now });
 		assert.equal(past.pace, "past");
 		const text = planProgressText(p);
-		assert.match(text, /Done 2\/4 nodes \(50%\)/);
+		assert.match(text, /Done 3\/4 nodes \(75%\)/);
 		assert.match(text, /Target date: 2026-11-08 \(set by the learner\)/);
 		assert.match(text, /On track/);
 	});
 
-	it("no estimate before the first done node; complete when all are done", () => {
+	it("no estimate before 3 measured steps; catch-up marks never count; complete when all are done", () => {
 		const none = computePlanProgress({ tree, messages: [...call("plan_init", {}, T0), user(T0 + 5 * MIN)], now: T0 + 6 * MIN });
 		assert.equal(none.remainingMs, null);
 		assert.equal(none.pace, null);
-		assert.match(planProgressText(none), /No time estimate until the first node is done/);
+		assert.match(planProgressText(none), /needs 3 steps finished with questions in this chat \(0 so far\)/);
+		// The fork's real bug: 3 steps marked done from a catch-up note (no questions) after 5 min.
+		const catchUp = computePlanProgress({
+			tree,
+			messages: [...call("plan_init", {}, T0), user(T0 + 2 * MIN), ...call("plan_progress", { done: ["a", "b", "c"] }, T0 + 5 * MIN)],
+			now: T0 + 6 * MIN,
+		});
+		assert.equal(catchUp.done, 3, "they still count as done");
+		assert.equal(catchUp.measuredDone, 0, "but not as measured pace");
+		assert.equal(catchUp.remainingMs, null, "no absurd '4 minutes per step' estimate");
 		const all = computePlanProgress({ tree, messages: [...call("plan_init", {}, T0), ...call("plan_progress", { done: ["a", "b", "c", "d"] }, T0 + 5 * MIN)], now: T0 + 6 * MIN });
 		assert.equal(all.percent, 100);
 		assert.equal(all.pace, "complete");
@@ -273,8 +286,9 @@ describe("rendering", () => {
 		assert.match(html, /1 done · 1 in progress · 2 ahead/);
 		assert.match(html, /data-testid="plan-target-date"[^>]*value="2026-11-15"/);
 		assert.match(html, /set by the teacher/);
-		assert.match(html, /data-testid="plan-pace"/);
-		assert.match(chipSummary(p), /^1\/4 · ~1 h 3\d min left · 15 Nov$/);
+		assert.ok(!html.includes('data-testid="plan-pace"'), "no pace verdict without an estimate");
+		assert.match(chipSummary(p), /^1\/4 · 15 Nov$/, "no time until 3 measured steps");
+		assert.match(html, /after 3 measured steps \(0 so far\)/);
 	});
 
 	it("done nodes get the green check on the map", () => {
