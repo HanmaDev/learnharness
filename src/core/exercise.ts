@@ -56,7 +56,7 @@ export const exerciseInputObject = Type.Object({
 		),
 	),
 	steps: Type.Optional(
-		Type.Array(Type.String(), { minItems: 2, maxItems: 12, description: "order only: the steps/lines in the CORRECT order (2–12)." }),
+		Type.Array(Type.String(), { minItems: 3, maxItems: 12, description: "order only: the steps/lines in the CORRECT order (3–12; two would give the answer away)." }),
 	),
 	lines: Type.Optional(
 		Type.Array(Type.String(), { minItems: 2, maxItems: 40, description: "find-mistake only: the numbered lines (code or derivation steps)." }),
@@ -65,7 +65,7 @@ export const exerciseInputObject = Type.Object({
 	pairs: Type.Optional(
 		Type.Array(
 			Type.Object({ left: Type.String(), right: Type.String() }),
-			{ minItems: 2, maxItems: 10, description: "match only: the correct pairs (2–10); right sides are shuffled for the learner." },
+			{ minItems: 3, maxItems: 10, description: "match only: the correct pairs (3–10); right sides are shuffled for the learner." },
 		),
 	),
 	explanation: Type.String({
@@ -101,7 +101,7 @@ export function exerciseInputProblems(input: ExerciseToolInput): string[] {
 			break;
 		}
 		case "order":
-			if (!input.steps || input.steps.length < 2) problems.push("order needs `steps` (2–12) in the correct order.");
+			if (!input.steps || input.steps.length < 3) problems.push("order needs `steps` (3–12) in the correct order.");
 			else if (new Set(input.steps.map((s) => s.trim())).size !== input.steps.length) problems.push("order steps must be distinct (identical lines make the order ambiguous).");
 			break;
 		case "find-mistake":
@@ -112,7 +112,7 @@ export function exerciseInputProblems(input: ExerciseToolInput): string[] {
 			}
 			break;
 		case "match":
-			if (!input.pairs || input.pairs.length < 2) problems.push("match needs `pairs` (2–10).");
+			if (!input.pairs || input.pairs.length < 3) problems.push("match needs `pairs` (3–10).");
 			else {
 				if (new Set(input.pairs.map((p) => p.left.trim())).size !== input.pairs.length) problems.push("match left sides must be distinct.");
 				if (new Set(input.pairs.map((p) => p.right.trim())).size !== input.pairs.length) problems.push("match right sides must be distinct.");

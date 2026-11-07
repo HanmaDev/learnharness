@@ -480,6 +480,8 @@ export interface QuestionAnswerData {
 	setAside?: boolean;
 	/** Fork: the exercise format's response + grading (kind "exercise"). */
 	exercise?: ExerciseAnswer;
+	/** Fork: snapshot ids of photos the learner attached to this answer. */
+	images?: string[];
 	answeredAt: string;
 }
 
@@ -822,5 +824,6 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	const thinking = ad.thinking ?? ad.note;
 	if (thinking) out.thinking = thinking;
 	if (ad.readingThinking) out.thinkingWhileReading = ad.readingThinking;
+	if (Array.isArray(ad.images) && ad.images.length > 0) out.photosAttached = ad.images.length;
 	return out;
 }

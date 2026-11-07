@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, GripVerticalIcon, XIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { PathInput } from "@/components/path-input";
@@ -30,6 +30,17 @@ import { cn } from "@/lib/utils";
 
 const MONO = "font-mono text-[13px] leading-6";
 
+/** Fork review fix: the form's in-progress state survives a remount (a
+ *  failed submit rolls the optimistic answer back and remounts the dock),
+ *  keyed by the question's call id, for the life of the window. */
+interface ExerciseDraft {
+	response: ExerciseResponse | null;
+	dontKnow: boolean;
+	confIdx: number;
+	thinking: string;
+}
+const drafts = new Map<string, ExerciseDraft>();
+
 export function ExerciseForm({
 	input,
 	toolCallId,
@@ -47,12 +58,37 @@ export function ExerciseForm({
 	dictationClaim?: boolean;
 	compactionRunning?: boolean;
 }) {
-	const [response, setResponse] = useState<ExerciseResponse | null>(() => initialResponse(input, toolCallId));
-	const [dontKnow, setDontKnow] = useState(false);
-	const [confIdx, setConfIdx] = useState(DEFAULT_CONFIDENCE_INDEX);
-	const [thinking, setThinking] = useState("");
-	const thinkingRef = useRef("");
-	const submittedRef = useRef(false);
+	const draft = drafts.get(toolCallId);
+	const [response, setResponse] = useState<ExerciseResponse | null>(() => draft?.response ?? initialResponse(input, toolCallId));
+	const [dontKnow, setDontKnow] = useState(draft?.dontKnow ?? false);
+	const [confIdx, setConfIdx] = useState(draft?.confIdx ?? DEFAULT_CONFIDENCE_INDEX);
+	const [thinking, setThinking] = useState(draft?.thinking ?? "");
+	const thinkingRef = useRef(draft?.thinking ?? "");
+	const submittingRef = useRef(false);
+	const rootRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		drafts.set(toolCallId, { response, dontKnow, confIdx, thinking });
+	}, [toolCallId, response, dontKnow, confIdx, thinking]);
+
+	// Tab walks the form's own fields (gaps, steps, lines, items, thinking).
+	// The window-level Tab is the app's field cycle; claim it at document
+	// level like the quiz dock does, only while focus is inside this form.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "Tab" || e.altKey || e.ctrlKey || e.metaKey) return;
+			const root = rootRef.current;
+			if (!root || !root.contains(document.activeElement)) return;
+			const fields = [...root.querySelectorAll<HTMLElement>("[data-exercise-focus]")];
+			if (fields.length === 0) return;
+			e.preventDefault();
+			e.stopPropagation();
+			const at = fields.findIndex((f) => f === document.activeElement || f.contains(document.activeElement));
+			const next = fields[(at + (e.shiftKey ? fields.length - 1 : 1)) % fields.length] ?? fields[0]!;
+			next.focus();
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, []);
 
 	const dictationAppend = useCallback((t: string) => {
 		const v = joinDictation(thinkingRef.current, t);
@@ -66,20 +102,25 @@ export function ExerciseForm({
 	const canSubmit = complete && !compactionRunning;
 
 	const submit = async () => {
-		if (!canSubmit || submittedRef.current) return;
-		submittedRef.current = true;
-		if (isDictationActive()) await finishDictation();
-		onSubmit(
-			buildExerciseAnswer(
-				input,
-				{ response: dontKnow ? null : response, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
-				toolName,
-			),
-		);
+		if (!canSubmit || submittingRef.current) return;
+		submittingRef.current = true;
+		try {
+			if (isDictationActive()) await finishDictation();
+			onSubmit(
+				buildExerciseAnswer(
+					input,
+					{ response: dontKnow ? null : response, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
+					toolName,
+				),
+			);
+		} finally {
+			// A refused send keeps the form (and its draft) usable for a retry.
+			submittingRef.current = false;
+		}
 	};
 
 	return (
-		<div data-testid="exercise-form" data-format={input.format}>
+		<div ref={rootRef} data-testid="exercise-form" data-format={input.format}>
 			<div className="px-4 pt-3 pb-2">
 				<div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 					{input.type === "predict" ? "Prediction" : "Exercise"} · {FORMAT_LABEL[input.format]}
@@ -163,6 +204,7 @@ export function ExerciseForm({
 					</div>
 					<div className="flex items-end gap-2">
 						<PathInput
+							data-exercise-focus=""
 							value={thinking}
 							ghostText={ghost}
 							onValueChange={(v) => {
@@ -246,6 +288,7 @@ function BlanksField({ input, values, onChange, onSubmit }: { input: ExerciseToo
 				) : (
 					<input
 						key={i}
+						data-exercise-focus=""
 						data-testid={`exercise-gap-${seg.gap + 1}`}
 						aria-label={`Gap ${seg.gap + 1}`}
 						value={values[seg.gap] ?? ""}
@@ -291,6 +334,7 @@ function OrderField({ input, order, onChange }: { input: ExerciseToolInput; orde
 					key={stepIdx}
 					draggable
 					tabIndex={0}
+					data-exercise-focus=""
 					data-testid={`exercise-step-${pos + 1}`}
 					onDragStart={() => setDragFrom(pos)}
 					onDragOver={(e) => e.preventDefault()}
@@ -335,6 +379,7 @@ function MistakeField({ input, line, onChange }: { input: ExerciseToolInput; lin
 					key={i}
 					type="button"
 					role="radio"
+					data-exercise-focus=""
 					aria-checked={line === i + 1}
 					data-testid={`exercise-line-${i + 1}`}
 					onClick={() => onChange(i + 1)}
@@ -381,6 +426,7 @@ function MatchField({ input, toolCallId, picks, onChange }: { input: ExerciseToo
 					<button
 						key={left}
 						type="button"
+						data-exercise-focus=""
 						data-testid={`exercise-left-${left + 1}`}
 						aria-pressed={active === left}
 						onClick={() => setActive(active === left ? null : left)}
@@ -401,6 +447,7 @@ function MatchField({ input, toolCallId, picks, onChange }: { input: ExerciseToo
 						<button
 							key={right}
 							type="button"
+							data-exercise-focus=""
 							data-testid={`exercise-right-${right + 1}`}
 							onClick={() => pickRight(right)}
 							className={cn("flex items-center gap-2 rounded-lg border bg-card px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50", active !== null && "border-primary/40")}
@@ -419,6 +466,52 @@ function MatchField({ input, toolCallId, picks, onChange }: { input: ExerciseToo
 
 function Mark({ ok }: { ok: boolean }) {
 	return ok ? <CheckIcon className="size-3.5 shrink-0 text-green-500" aria-label="right" /> : <XIcon className="size-3.5 shrink-0 text-red-500" aria-label="wrong" />;
+}
+
+/** Fork review fix: after "I don't know" (no response to grade), show the
+ *  correct answer itself, the way quiz marks its correct options. */
+export function ExerciseSolution({ input }: { input: ExerciseToolInput }) {
+	return (
+		<div data-testid="exercise-solution" className="mt-2 text-sm">
+			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">The answer</div>
+			{input.format === "blanks" && (
+				<div className={cn("rounded-lg border bg-muted/40 px-3 py-2 whitespace-pre-wrap", input.language ? MONO : "leading-7")}>
+					{templateSegments(input.template ?? "").map((seg, i) =>
+						"text" in seg ? <span key={i}>{seg.text}</span> : <span key={i} className="rounded bg-green-500/15 px-1 text-green-500">{input.blanks?.[seg.gap]?.accept[0]}</span>,
+					)}
+				</div>
+			)}
+			{input.format === "order" && (
+				<ol className="flex flex-col gap-1">
+					{(input.steps ?? []).map((s, i) => (
+						<li key={i} className={cn("whitespace-pre-wrap text-green-500", input.language && MONO)}>{i + 1}. {s}</li>
+					))}
+				</ol>
+			)}
+			{input.format === "find-mistake" && (
+				<div className="overflow-x-auto rounded-lg border bg-muted/40 py-1">
+					{(input.lines ?? []).map((text, i) => (
+						<div key={i} className={cn("flex items-start gap-3 px-3", input.mistakeLine === i + 1 && "bg-green-500/10")}>
+							<span className={cn("w-6 shrink-0 text-right text-muted-foreground", MONO)}>{i + 1}</span>
+							<span className={cn("min-w-0 flex-1 whitespace-pre-wrap", input.language ? MONO : "py-0.5")}>{text}</span>
+							{input.mistakeLine === i + 1 && <span className="shrink-0 text-xs text-green-500">the mistake</span>}
+						</div>
+					))}
+				</div>
+			)}
+			{input.format === "match" && (
+				<ul className="flex flex-col gap-1">
+					{(input.pairs ?? []).map((p, i) => (
+						<li key={i} className="flex items-start gap-2">
+							<span className={cn(input.language && MONO)}>{p.left}</span>
+							<span className="text-muted-foreground">→</span>
+							<span className="text-green-500">{p.right}</span>
+						</li>
+					))}
+				</ul>
+			)}
+		</div>
+	);
 }
 
 export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInput; answer: ExerciseAnswer }) {

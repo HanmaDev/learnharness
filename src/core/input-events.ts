@@ -38,6 +38,7 @@ import {
 	newAnswerResult,
 	newPlanTargetNotice,
 	planTargetAnnounced,
+	type LearnerPhoto,
 	newNextMessage,
 	newProblemDismissedMarker,
 	newThinkingMessage,
@@ -61,7 +62,7 @@ export type ChatInput =
 	 *  thinking on the ACTIVE problem — one lane (owner 2026-10-05):
 	 *  whether it claims an answer is read from the text. One
 	 *  problem may carry many submissions; each is its own turn. */
-	| { type: "thinking"; problemCallId: string; text: string }
+	| { type: "thinking"; problemCallId: string; text: string; images?: string[] }
 	/** The practice move-on signal (owner round 16): the learner's
 	 *  explicit go-ahead during the between-problems pause — the Next
 	 *  chip or Enter on an empty composer. Practice sessions only, and
@@ -197,10 +198,11 @@ export function parseChatInput(input: unknown): ChatInput {
 			if (typeof i.problemCallId !== "string" || i.problemCallId.length === 0) {
 				throw new ChatInputError("thinking input requires problemCallId");
 			}
-			if (typeof i.text !== "string" || i.text.trim().length === 0) {
+			const images = parsePhotoIds(i.images);
+			if ((typeof i.text !== "string" || i.text.trim().length === 0) && images.length === 0) {
 				throw new ChatInputError("thinking input requires non-empty text");
 			}
-			return { type: "thinking", problemCallId: i.problemCallId, text: i.text };
+			return { type: "thinking", problemCallId: i.problemCallId, text: typeof i.text === "string" ? i.text : "", ...(images.length ? { images } : {}) };
 		case "next":
 			return { type: "next" };
 		case "interrupt":
@@ -222,8 +224,28 @@ export function parseChatInput(input: unknown): ChatInput {
  * else 400s honestly instead of silently interrupting a question or
  * double-answering.
  */
+/** Fork: at most this many photos ride one submission. */
+export const MAX_PHOTOS_PER_SUBMISSION = 4;
+
+function parsePhotoIds(value: unknown): string[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value) || value.length > MAX_PHOTOS_PER_SUBMISSION || !value.every((v) => typeof v === "string" && /^[a-f0-9]{64}$/.test(v))) {
+		throw new ChatInputError(`images must be up to ${MAX_PHOTOS_PER_SUBMISSION} snapshot ids`);
+	}
+	return [...new Set(value as string[])];
+}
+
+/** Resolve photo ids against the record's snapshots (server: bytes ride along). */
+function resolvePhotos(record: { imageSnapshots?: Record<string, { mimeType: "image/png" | "image/jpeg"; data: string }> }, ids: readonly string[] | undefined): LearnerPhoto[] {
+	return (ids ?? []).map((snapshotId) => {
+		const snap = record.imageSnapshots?.[snapshotId];
+		if (!snap) throw new ChatInputError("an attached photo is no longer available — attach it again");
+		return { snapshotId, mimeType: snap.mimeType, data: snap.data };
+	});
+}
+
 export function inputAppends(
-	record: { messages: LhMessage[]; kind?: string; planTarget?: { date: string; at: string; setBy: string } },
+	record: { messages: LhMessage[]; kind?: string; planTarget?: { date: string; at: string; setBy: string }; imageSnapshots?: Record<string, { mimeType: "image/png" | "image/jpeg"; data: string }> },
 	input: ChatInput,
 	/** Fork: when the learner last cleared the target date (no planTarget
 	 *  left to key the notice) — the caller passes it; tests omit it. */
@@ -248,7 +270,8 @@ export function inputAppends(
 			if (!pending || pending.toolCallId !== input.toolCallId) {
 				throw new ChatInputError("answer input targets no pending question call");
 			}
-			return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
+			const answerPhotos = Array.isArray(input.answer.images) ? resolvePhotos(record, parsePhotoIds(input.answer.images)) : [];
+			return [newAnswerResult(input.toolCallId, pending.tool, input.answer, answerPhotos)];
 		}
 		case "interrupt": {
 			const waiting = danglingQuestionsOf(record.messages);
@@ -275,7 +298,7 @@ export function inputAppends(
 			if (!active || active.toolCallId !== input.problemCallId) {
 				throw new ChatInputError("thinking input targets no active problem");
 			}
-			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text)];
+			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, resolvePhotos(record, input.images))];
 		}
 		case "next": {
 			// Honest 400s, the thinking gate's discipline: the signal is a

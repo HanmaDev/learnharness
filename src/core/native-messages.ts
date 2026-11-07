@@ -209,13 +209,15 @@ export function newAnswerResult(
 	toolCallId: string,
 	toolName: string,
 	answer: unknown,
+	/** Fork: photos with bytes (server side) ride as image content. */
+	photos?: readonly LearnerPhoto[],
 ): LhMessage & ToolResultMessage {
 	return {
 		id: newMessageId(),
 		role: "toolResult",
 		toolCallId,
 		toolName,
-		content: [{ type: "text", text: JSON.stringify(compactAnswerForModel(answer as QuestionAnswerData)) }],
+		content: [{ type: "text", text: JSON.stringify(compactAnswerForModel(answer as QuestionAnswerData)) }, ...photoContent(photos)],
 		// 0.87.1 narrowed ToolResultMessage.details to JsonRepresentation —
 		// our payloads are JSON-safe answer structures, so the cast is honest.
 		details: answer as ToolResultMessage["details"],
@@ -343,16 +345,30 @@ export function newGraphContextMessage(picks: readonly GraphContextPick[], chain
  *  content label is the single "Your thinking"; `details` keeps the raw
  *  payload for the transcript card. One problem may carry many
  *  submissions. */
-export function newThinkingMessage(problemCallId: string, text: string): LhMarkerMessage {
+export function newThinkingMessage(problemCallId: string, text: string, images?: readonly LearnerPhoto[]): LhMarkerMessage {
 	return {
 		id: newMessageId(),
 		role: "custom",
 		customType: "practice-thinking",
-		content: `${THINKING_LABEL}:\n${text}`,
+		content: `${THINKING_LABEL}:\n${text}${images?.length ? `\n[${images.length} photo${images.length === 1 ? "" : "s"} of handwritten work attached]` : ""}`,
 		display: true,
-		details: { problemCallId, text },
+		details: { problemCallId, text, ...(images?.length ? { images } : {}) },
 		timestamp: Date.now(),
 	};
+}
+
+/** Fork: a photo the learner attached (paste/drag/attach/phone). The record
+ *  keeps the snapshot id (the UI fetches it); the SERVER copy also carries
+ *  the bytes so the model receives the image itself. */
+export interface LearnerPhoto {
+	snapshotId: string;
+	mimeType?: "image/png" | "image/jpeg";
+	data?: string;
+}
+
+/** The image content blocks for the model (photos with bytes only). */
+export function photoContent(images: readonly LearnerPhoto[] | undefined): Array<{ type: "image"; data: string; mimeType: string }> {
+	return (images ?? []).filter((i) => typeof i.data === "string" && i.data.length > 0 && i.mimeType).map((i) => ({ type: "image" as const, data: i.data!, mimeType: i.mimeType! }));
 }
 
 /** The learner's explicit move-on signal (owner round 16): appended by
@@ -663,7 +679,11 @@ export function toLlmMessages(messages: readonly AgentMessage[]): Message[] {
 			if (marker.customType === "compaction" && head !== null) continue;
 			out.push({
 				role: "user",
-				content: [{ type: "text", text: marker.content }],
+				content: [
+					{ type: "text", text: marker.content },
+					// Fork: photos of handwritten work reach the model as images.
+					...(marker.customType === "practice-thinking" ? photoContent((marker.details as { images?: LearnerPhoto[] } | null)?.images) : []),
+				],
 			timestamp: marker.timestamp,
 			});
 			continue;

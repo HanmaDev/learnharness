@@ -51,7 +51,12 @@ describe("exercise — validation", () => {
 		assert.match(exerciseInputProblems({ ...blanks, template: "{{2}} then {{1}}" }).join(), /numbered \{\{1\}\}\.\.\{\{2\}\} in reading order/);
 		assert.match(exerciseInputProblems({ ...order, steps: ["a", "a"] }).join(), /distinct/);
 		assert.match(exerciseInputProblems({ ...mistake, mistakeLine: 9 }).join(), /outside 1\.\.4/);
-		assert.match(exerciseInputProblems({ ...match, pairs: [{ left: "a", right: "x" }, { left: "a", right: "y" }] }).join(), /left sides must be distinct/);
+		assert.match(exerciseInputProblems({ ...match, pairs: [{ left: "a", right: "x" }, { left: "a", right: "y" }, { left: "b", right: "z" }] }).join(), /left sides must be distinct/);
+	});
+
+	it("order and match need at least 3 items (2 would give the answer away)", () => {
+		assert.match(exerciseInputProblems({ ...order, steps: ["a", "b"] }).join(), /3–12/);
+		assert.match(exerciseInputProblems({ ...match, pairs: match.pairs!.slice(0, 2) }).join(), /3–10/);
 	});
 
 	it("template helpers find and split gaps", () => {
@@ -164,6 +169,19 @@ describe("exercise — rendering", () => {
 		assert.match(html, /data-testid="exercise-confidence"/);
 		assert.match(html, /data-testid="exercise-submit"[^>]*disabled/, "submit waits for every gap");
 		assert.match(html, /fill in the blanks/);
+	});
+
+	it("I don't know shows the correct answer; details render on the card", () => {
+		const idk = buildExerciseAnswer({ ...blanks, details: "Table users" }, { response: null, dontKnow: true });
+		const html = renderToStaticMarkup(<AnsweredCard answer={idk} input={{ ...blanks, details: "Table users" }} />);
+		assert.match(html, /data-testid="exercise-solution"/);
+		assert.match(html, /ORDER BY/);
+		assert.match(html, /Table users/);
+	});
+
+	it("every interactive field joins the form's own Tab chain", () => {
+		const html = dock(blanks);
+		assert.equal((html.match(/data-exercise-focus=""/g) ?? []).length, 3, "two gaps + thinking");
 	});
 
 	it("a malformed exercise falls back to the malformed card", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExerciseAnsweredBody } from "@/components/exercise-form";
+import { ExerciseAnsweredBody, ExerciseSolution } from "@/components/exercise-form";
 import { parseExerciseInput } from "@/src/core";
 import { useState } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
@@ -105,7 +105,13 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 				</div>
 			)}
 
+			{isExercise && exerciseInput?.details && (
+				<div className="mb-3 text-sm text-muted-foreground">
+					<ToolContentResponse>{exerciseInput.details}</ToolContentResponse>
+				</div>
+			)}
 			{isExercise && exerciseInput && answer.exercise && <ExerciseAnsweredBody input={exerciseInput} answer={answer.exercise} />}
+			{isExercise && exerciseInput && !answer.exercise && answer.dontKnow && <ExerciseSolution input={exerciseInput} />}
 
 			{((answer.options?.length ?? 0) > 0 || answer.other) && (
 				<div className="flex flex-col gap-1.5 text-sm">
