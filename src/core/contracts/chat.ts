@@ -46,6 +46,9 @@ export interface ChatRecord {
 	/** Fork: when the learner last cleared the target date (keys the one
 	 *  notice telling the teacher). */
 	planTargetClearedAt?: string;
+	/** Fork: photos the learner uploaded (snapshot id → upload time). Only
+	 *  these are ever pruned, and only while nothing in the record uses them. */
+	photoUploads?: Record<string, string>;
 	/** Append-only usage log (observability, 2026-09): one entry per model
 	 * turn. DELIBERATELY a parallel log, not per-message metadata — the client
 	 * re-POSTs its message list every turn and its copies never carry

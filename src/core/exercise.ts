@@ -257,6 +257,147 @@ export function sqlIsOrdered(referenceSql: string): boolean {
 	return /\border\s+by\b/i.test(s);
 }
 
+// ─── exact tie handling for sorted references (fork) ─────────────────────────
+
+/** Top-level structure of one SELECT: keyword positions outside strings,
+ *  comments and parentheses. Null for shapes we don't rewrite. */
+function topLevelScan(sql: string): { masked: string } {
+	// Same length as sql: strings/comments/parenthesized text become spaces,
+	// so indices found in `masked` are valid in `sql`.
+	const out = sql.split("");
+	let depth = 0;
+	for (let i = 0; i < sql.length; i++) {
+		const c = sql[i]!;
+		if (c === "'" || c === '"' || c === "`") {
+			const q = c;
+			let j = i + 1;
+			while (j < sql.length && !(sql[j] === q && sql[j + 1] !== q)) j += sql[j] === q ? 2 : 1;
+			for (let k = i; k <= Math.min(j, sql.length - 1); k++) out[k] = " ";
+			i = j;
+			continue;
+		}
+		if (c === "-" && sql[i + 1] === "-") {
+			let j = i;
+			while (j < sql.length && sql[j] !== "\n") out[j++] = " ";
+			i = j;
+			continue;
+		}
+		if (c === "/" && sql[i + 1] === "*") {
+			const end = sql.indexOf("*/", i + 2);
+			const j = end < 0 ? sql.length : end + 2;
+			for (let k = i; k < j; k++) out[k] = " ";
+			i = j - 1;
+			continue;
+		}
+		if (c === "(") {
+			depth++;
+			out[i] = " ";
+			continue;
+		}
+		if (c === ")") {
+			depth = Math.max(0, depth - 1);
+			out[i] = " ";
+			continue;
+		}
+		if (depth > 0) out[i] = " ";
+	}
+	return { masked: out.join("") };
+}
+
+/** Split a top-level comma list (commas inside parentheses/strings kept). */
+function splitTopLevel(text: string): string[] {
+	const { masked } = topLevelScan(text);
+	const parts: string[] = [];
+	let last = 0;
+	for (let i = 0; i < masked.length; i++) {
+		if (masked[i] === ",") {
+			parts.push(text.slice(last, i));
+			last = i + 1;
+		}
+	}
+	parts.push(text.slice(last));
+	return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+export interface SqlKeyedQuery {
+	/** The reference with its ORDER BY keys appended to the select list. */
+	sql: string;
+	/** Per sort key: an appended column (index after the original columns) or
+	 *  a 1-based output position (ORDER BY 2). */
+	keys: Array<{ appended: number } | { position: number }>;
+}
+
+/**
+ * Rewrite a sorted reference so it ALSO returns its sort keys:
+ *   SELECT name FROM e ORDER BY dept, age DESC
+ *   → SELECT name, (dept) AS __lh_k0, (age) AS __lh_k1 FROM e ORDER BY dept, age DESC
+ * Rows with equal keys are ties — any order among them is correct. Returns
+ * null for shapes this can't rewrite safely (DISTINCT, compound queries, no
+ * top-level ORDER BY); the caller falls back.
+ */
+export function sqlWithOrderKeys(referenceSql: string): SqlKeyedQuery | null {
+	const sql = referenceSql.trim().replace(/;\s*$/, "");
+	const { masked } = topLevelScan(sql);
+	const lower = masked.toLowerCase();
+	if (/\b(union|intersect|except)\b/.test(lower)) return null;
+	const select = lower.search(/\bselect\b/);
+	if (select < 0) return null;
+	if (/^\s*distinct\b/.test(lower.slice(select + 6))) return null;
+	const orderMatch = /\border\s+by\b/.exec(lower);
+	if (!orderMatch) return null;
+	const orderStart = orderMatch.index;
+	const keysStart = orderStart + orderMatch[0].length;
+	const limit = /\blimit\b/.exec(lower.slice(keysStart));
+	const keysEnd = limit ? keysStart + limit.index : sql.length;
+	const keyExprs = splitTopLevel(sql.slice(keysStart, keysEnd)).map((k) =>
+		k.replace(/\s+collate\s+\w+/i, "").replace(/\s+nulls\s+(first|last)\s*$/i, "").replace(/\s+(asc|desc)\s*$/i, "").trim(),
+	);
+	if (keyExprs.length === 0) return null;
+	const fromMatch = /\bfrom\b/.exec(lower.slice(select));
+	const insertAt = fromMatch ? select + fromMatch.index : orderStart;
+	const keys: SqlKeyedQuery["keys"] = [];
+	const added: string[] = [];
+	for (const expr of keyExprs) {
+		if (/^\d+$/.test(expr)) keys.push({ position: Number(expr) });
+		else {
+			keys.push({ appended: added.length });
+			added.push(`(${expr}) AS __lh_k${added.length}`);
+		}
+	}
+	if (added.length === 0) return { sql, keys };
+	const before = sql.slice(0, insertAt).replace(/\s+$/, "");
+	return { sql: `${before}, ${added.join(", ")} ${sql.slice(insertAt)}`, keys };
+}
+
+/**
+ * Tie-aware ordered comparison: walk the keyed reference in order, group
+ * consecutive rows with equal keys (ties), and require the learner's rows to
+ * match each group as a multiset, group by group. Exact — no flag needed.
+ */
+export function sqlMatchesWithTies(
+	keyed: { columns: string[]; rows: SqlCell[][] },
+	keys: SqlKeyedQuery["keys"],
+	visibleColumns: number,
+	got: { columns: string[]; rows: SqlCell[][] },
+): boolean {
+	if (got.columns.length !== visibleColumns || got.rows.length !== keyed.rows.length) return false;
+	const keyOf = (row: SqlCell[]) =>
+		JSON.stringify(keys.map((k) => ("appended" in k ? row[visibleColumns + k.appended] : row[k.position - 1]) ?? null));
+	const cell = (v: SqlCell): string => (v === null ? "\u0000NULL" : typeof v === "number" ? `n:${Number(v.toPrecision(12))}` : `s:${String(v).trim()}`);
+	const rowKey = (row: SqlCell[]) => JSON.stringify(row.slice(0, visibleColumns).map(cell));
+	let i = 0;
+	while (i < keyed.rows.length) {
+		const k = keyOf(keyed.rows[i]!);
+		let j = i;
+		while (j < keyed.rows.length && keyOf(keyed.rows[j]!) === k) j++;
+		const want = keyed.rows.slice(i, j).map(rowKey).sort();
+		const have = got.rows.slice(i, j).map(rowKey).sort();
+		if (want.some((w, n) => w !== have[n])) return false;
+		i = j;
+	}
+	return true;
+}
+
 /** SQL grading verdict: exact match, or (when the reference sorts) the same
  *  rows in a different order from a query that ALSO sorts — ties may
  *  legitimately order differently, so that counts, flagged for the teacher. */

@@ -27,7 +27,7 @@ import { mathEquivalent } from "@/components/math-check";
 import { describeSchema, runSql, type SqlRun } from "@/components/sql-runner";
 import { buildDemoSrcDoc, INITIAL_DEMO_BRIDGE_STATE, reduceDemoBridgeState, type DemoBridgeState } from "@/components/artifacts/demo-card";
 import { htmlPreviewDocument } from "@/components/artifacts/html-preview-card";
-import { sqlVerdict, type SqlCell } from "@/src/core";
+import { sqlMatchesWithTies, sqlVerdict, sqlWithOrderKeys, type SqlCell } from "@/src/core";
 
 /**
  * Fork (2026-11-07): the `exercise` question's form — blanks, order,
@@ -301,7 +301,14 @@ async function gradeSqlResponse(input: ExerciseToolInput, query: string): Promis
 	const setup = input.setupSql ?? "";
 	const [got, ref] = await Promise.all([runSql(setup, query), runSql(setup, input.referenceSql ?? "")]);
 	if (!got.ok) return { format: "sql", query, matched: false, columns: [], rows: [], error: got.error, expectedRows: ref.ok ? ref.rows.length : undefined };
-	const verdict = ref.ok ? sqlVerdict(ref, got, input.referenceSql ?? "", query) : { matched: false };
+	let verdict: { matched: boolean; orderUnverified?: boolean } = ref.ok ? sqlVerdict(ref, got, input.referenceSql ?? "", query) : { matched: false };
+	// Same rows, different order, sorted reference: decide EXACTLY by re-running
+	// the reference with its sort keys, so ties may order freely and nothing else.
+	if (ref.ok && verdict.orderUnverified) {
+		const keyed = sqlWithOrderKeys(input.referenceSql ?? "");
+		const keyedRun = keyed ? await runSql(setup, keyed.sql) : null;
+		if (keyed && keyedRun?.ok) verdict = { matched: sqlMatchesWithTies(keyedRun, keyed.keys, ref.columns.length, got) };
+	}
 	return { format: "sql", query, ...verdict, columns: got.columns, rows: got.rows.slice(0, MAX_SHOWN_ROWS), expectedRows: ref.ok ? ref.rows.length : undefined };
 }
 

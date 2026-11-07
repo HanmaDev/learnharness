@@ -75,13 +75,17 @@ export function usePhotoAttachments() {
 		[chatId, addSnapshot],
 	);
 
-	const remove = useCallback((snapshotId: string) => {
+	/** `discard`: the learner removed it (not sent) — the server drops it if unused. */
+	const remove = useCallback((snapshotId: string, discard = false) => {
 		setPhotos((list) => {
 			const gone = list.find((p) => p.snapshotId === snapshotId);
 			if (gone?.preview) URL.revokeObjectURL(gone.preview);
 			return list.filter((p) => p.snapshotId !== snapshotId);
 		});
-	}, []);
+		if (discard && chatId) {
+			void fetch(`/api/chats/${encodeURIComponent(chatId)}/upload-image?snapshot=${snapshotId}`, { method: "DELETE" }).catch(() => {});
+		}
+	}, [chatId]);
 
 	const clear = useCallback(() => {
 		for (const p of photosRef.current) if (p.preview) URL.revokeObjectURL(p.preview);
@@ -128,7 +132,7 @@ export function PhotoTray({ attach, disabled = false }: { attach: PhotoAttachmen
 						type="button"
 						aria-label="Remove photo"
 						data-testid="photo-remove"
-						onClick={() => attach.remove(p.snapshotId)}
+						onClick={() => attach.remove(p.snapshotId, true)}
 						className="absolute -top-1.5 -right-1.5 rounded-full border bg-card p-0.5 text-muted-foreground hover:text-foreground"
 					>
 						<XIcon className="size-3" />

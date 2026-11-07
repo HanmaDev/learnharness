@@ -46,6 +46,12 @@ export interface ChatStore {
 	saveMessages(id: string, messages: LhMessage[]): void;
 	/** Save a processed picture once, without changing conversation activity/order. */
 	saveImageSnapshot(id: string, snapshotId: string, image: ImageSnapshot): void;
+	/** Fork: save a learner photo upload (snapshot + its upload time), pruning
+	 *  stale unused uploads in the same write. */
+	savePhotoUpload(id: string, snapshotId: string, image: ImageSnapshot): void;
+	/** Fork: drop one uploaded photo if nothing in the record uses it.
+	 *  Returns whether it was removed. */
+	removeUnusedPhoto(id: string, snapshotId: string): boolean;
 	/** Persist the session plan tree (plan tools call this in execute). */
 	saveTree(id: string, tree: PlanTree): void;
 	/** Fork: set or clear (null) the plan's target date. */

@@ -231,6 +231,53 @@ function saveTree(id: string, tree: PlanTree): void {
 	writeChat(record);
 }
 
+/** Fork: an uploaded photo nobody submitted is kept this long, then pruned. */
+const STALE_UPLOAD_MS = 24 * 60 * 60_000;
+
+/** Is this snapshot id referenced anywhere in the record's messages? Ids are
+ *  64-hex sha256 digests, so a substring scan cannot collide by accident. */
+function photoInUse(record: ChatRecord, snapshotId: string): boolean {
+	return JSON.stringify(record.messages).includes(snapshotId);
+}
+
+/** Drop stale, unused learner uploads (never show_image snapshots: only ids
+ *  in photoUploads are candidates). Mutates the record; returns whether it changed. */
+function pruneStaleUploads(record: ChatRecord, now = Date.now()): boolean {
+	const uploads = record.photoUploads;
+	if (!uploads) return false;
+	let changed = false;
+	for (const [snapshotId, at] of Object.entries(uploads)) {
+		const inUse = photoInUse(record, snapshotId);
+		if (inUse) {
+			delete uploads[snapshotId]; // submitted: a normal session snapshot from now on
+			changed = true;
+		} else if (now - Date.parse(at) > STALE_UPLOAD_MS) {
+			delete uploads[snapshotId];
+			if (record.imageSnapshots?.[snapshotId]) delete record.imageSnapshots[snapshotId];
+			changed = true;
+		}
+	}
+	return changed;
+}
+
+function savePhotoUpload(id: string, snapshotId: string, image: ImageSnapshot): void {
+	saveImageSnapshot(id, snapshotId, image);
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	pruneStaleUploads(record);
+	if (!photoInUse(record, snapshotId)) record.photoUploads = { ...record.photoUploads, [snapshotId]: new Date().toISOString() };
+	writeChat(record);
+}
+
+function removeUnusedPhoto(id: string, snapshotId: string): boolean {
+	const record = getChat(id);
+	if (!record || !record.photoUploads?.[snapshotId] || photoInUse(record, snapshotId)) return false;
+	delete record.photoUploads[snapshotId];
+	if (record.imageSnapshots?.[snapshotId]) delete record.imageSnapshots[snapshotId];
+	writeChat(record);
+	return true;
+}
+
 /** Fork: the plan's target date. Like saveTree, not conversation activity
  *  (updatedAt stays put). A synchronous read/merge/write, so a turn's later
  *  saveMessages keeps it. */
@@ -253,6 +300,8 @@ export const chatStore: ChatStore = {
 	listChats,
 	saveMessages,
 	saveImageSnapshot,
+	savePhotoUpload,
+	removeUnusedPhoto,
 	saveTree,
 	savePlanTarget,
 	saveSettings,

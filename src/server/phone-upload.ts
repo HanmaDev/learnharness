@@ -159,7 +159,7 @@ export async function phoneUploadStatus(token: string, chatId: string): Promise<
 		clearTimeout(session.timer);
 		try {
 			const image = await normalizeImageBytes(bytes);
-			chatStore.saveImageSnapshot(chatId, image.snapshotId, image);
+			chatStore.savePhotoUpload(chatId, image.snapshotId, image);
 			session.snapshotId = image.snapshotId;
 			session.state = "done";
 		} catch (err) {
