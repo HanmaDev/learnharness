@@ -3,7 +3,6 @@
 import { useCallback, useRef, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
-import { teaserText } from "@/components/question-dock";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
@@ -96,7 +95,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 			>
 				<ChevronRightIcon className="size-4 shrink-0 rotate-90" />
 				<span className="font-medium">Problem</span>
-				<span className="min-w-0 flex-1 truncate">{teaserText(input.statement)}</span>
+				<span className="min-w-0 flex-1 truncate">{input.statement}</span>
 			</button>
 		);
 	}
