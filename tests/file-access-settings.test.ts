@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
+import { FILE_SYMLINK_SKIP, fileSymlinksSupported } from "./symlink-support.ts";
 
 // Every store, route and composition-root import sees only these synthetic
 // locations. No real settings, credential files or learning records are used.
@@ -86,13 +87,19 @@ describe("strict persisted file-access policy", () => {
 		assert.equal(readFileAccessSettings().ok, false);
 		assert.throws(() => resolveSourcePath(path.join(a, "notes.md")), blocked);
 	});
-	it("directories, dangling settings symlinks and dangling data-directory symlinks are not first boot", async () => {
+	it("directories, dangling settings symlinks and dangling data-directory symlinks are not first boot", async (t) => {
 		await fs.mkdir(SETTINGS_FILE);
 		assert.equal(readFileAccessSettings().ok, false);
 		await fs.rmdir(SETTINGS_FILE);
-		await fs.symlink(path.join(root, "missing-settings.json"), SETTINGS_FILE, "file");
-		assert.equal(readFileAccessSettings().ok, false);
-		await fs.unlink(SETTINGS_FILE);
+		// Fork: the dangling FILE symlink needs symlink privilege on Windows;
+		// the directory and dangling-junction cases below always run.
+		if (await fileSymlinksSupported()) {
+			await fs.symlink(path.join(root, "missing-settings.json"), SETTINGS_FILE, "file");
+			assert.equal(readFileAccessSettings().ok, false);
+			await fs.unlink(SETTINGS_FILE);
+		} else {
+			t.diagnostic(`dangling settings-file symlink case not run: ${FILE_SYMLINK_SKIP}`);
+		}
 		await fs.rmdir(data);
 		await fs.symlink(path.join(root, "missing-data"), data, process.platform === "win32" ? "junction" : "dir");
 		try { assert.equal(readFileAccessSettings().ok, false); }

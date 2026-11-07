@@ -8,6 +8,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { createFauxCore } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ChatStore, JobStore } from "../src/core/ports.ts";
+import { FILE_SYMLINK_SKIP, fileSymlinksSupported } from "./symlink-support.ts";
 
 // Set this test process's locations BEFORE importing config/agent modules.
 // Never read or modify the developer's actual home, keys or learning data.
@@ -30,7 +31,11 @@ async function write(relative: string, body = "LH_SYNTHETIC_SECRET_MARKER\n"): P
 	await fs.writeFile(file, body);
 	return file;
 }
+// Fork: without symlink privilege on Windows, the fixture's FILE aliases
+// can't exist — the suites built on them skip (directory links use junctions).
+const FILE_LINKS = await fileSymlinksSupported();
 async function link(target: string, alias: string, directory = false): Promise<void> {
+	if (!directory && !FILE_LINKS) return;
 	await fs.symlink(target, alias, directory ? (process.platform === "win32" ? "junction" : "dir") : "file");
 }
 
@@ -80,7 +85,7 @@ async function text(tool: AgentTool<any>, args: unknown): Promise<string> {
 }
 const denied = /Access denied: .* is a protected location/;
 
-describe("source access: configured credentials only", () => {
+describe("source access: configured credentials only", { skip: FILE_LINKS ? false : FILE_SYMLINK_SKIP }, () => {
 	const protectedFiles = [
 		auth, targetKey, path.join(home, "notes", "key-alias"),
 		authTemp, `${auth}.tmp-${uuid}`, path.join(home, "notes", "key-temp-alias"),
@@ -132,7 +137,7 @@ describe("source access: configured credentials only", () => {
 	});
 });
 
-describe("source access: canonical roots and all tool paths", () => {
+describe("source access: canonical roots and all tool paths", { skip: FILE_LINKS ? false : FILE_SYMLINK_SKIP }, () => {
 	for (const alias of [home, path.join(root, "home-alias"), path.join(root, "home-alias-2")]) {
 		it(`find/grep/walk cannot bypass denials through ${path.basename(alias)}`, async () => {
 			const found = await text(findTool, { path: alias, pattern: "*" });
@@ -304,7 +309,7 @@ describe("source access: case-sensitive home-location variants", () => {
 	});
 });
 
-describe("source access: credential case aliases on the fixture filesystem", () => {
+describe("source access: credential case aliases on the fixture filesystem", { skip: FILE_LINKS ? false : FILE_SYMLINK_SKIP }, () => {
 	async function caseAliasesAvailable(): Promise<boolean> {
 		try {
 			const [named, alias] = await Promise.all([fs.stat(path.join(root, "keyfiles")), fs.stat(path.join(root, "KEYFILES"))]);

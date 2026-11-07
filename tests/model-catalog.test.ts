@@ -343,13 +343,20 @@ describe("pi thinking truth (pinned against pi-ai upgrades)", () => {
  *  finds a claude binary when installed is true. */
 function withClaudeInstalled(installed: boolean, fn: () => void, enabled = true): void {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-catalog-"));
-	const saved = { PATH: process.env.PATH, HOME: process.env.HOME, npm_config_prefix: process.env.npm_config_prefix };
+	// Windows: os.homedir() reads USERPROFILE (not HOME) and npm's global bin
+	// defaults under APPDATA — isolate both, or the real install leaks in.
+	const saved = {
+		PATH: process.env.PATH, HOME: process.env.HOME, npm_config_prefix: process.env.npm_config_prefix,
+		USERPROFILE: process.env.USERPROFILE, APPDATA: process.env.APPDATA,
+	};
 	const settings = readSettings();
 	writeSettings({ ...(settings ?? { version: 1 }), claudeCode: { enabled } });
 
-	if (installed) fs.writeFileSync(path.join(dir, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+	if (installed) fs.writeFileSync(path.join(dir, process.platform === "win32" ? "claude.exe" : "claude"), "#!/bin/sh\n", { mode: 0o755 });
 	process.env.PATH = dir;
 	process.env.HOME = dir;
+	process.env.USERPROFILE = dir;
+	process.env.APPDATA = dir;
 	delete process.env.npm_config_prefix;
 
 	try {

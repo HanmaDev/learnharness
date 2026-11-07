@@ -160,15 +160,21 @@ describe("learner image source safety", () => {
 		const home = await fs.mkdtemp(path.join(scratch, "home-"));
 		await fs.mkdir(path.join(home, ".claude"));
 		await fs.writeFile(path.join(home, ".claude", "private.png"), picture());
-		await fs.symlink(path.join(home, ".claude"), path.join(home, "alias"));
-		const old = process.env.HOME;
+		// A directory alias: a junction on Windows (needs no symlink privilege).
+		await fs.symlink(path.join(home, ".claude"), path.join(home, "alias"), process.platform === "win32" ? "junction" : "dir");
+		// Windows resolves the home directory from USERPROFILE, not HOME.
+		const old = process.env.HOME, oldProfile = process.env.USERPROFILE;
 		try {
 			process.env.HOME = home;
+			process.env.USERPROFILE = home;
 			const tool = createShowImageTool({ chatId: "never-written", chatStore: { saveImageSnapshot: () => assert.fail("must not save denied image") } });
 			await assert.rejects(tool.execute("denied", { path: "alias/private.png" }), /Access denied/);
 			const tools = jobTools({ chatId: "x", jobStore: { findJobByToolCallId: () => undefined } as unknown as JobStore, spawn: () => assert.fail("must not spawn") });
 			await assert.rejects(tools.visual!.execute("denied", { brief: "mark it", image: "alias/private.png" }), /Access denied/);
-		} finally { if (old === undefined) delete process.env.HOME; else process.env.HOME = old; }
+		} finally {
+			if (old === undefined) delete process.env.HOME; else process.env.HOME = old;
+			if (oldProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = oldProfile;
+		}
 	});
 
 	it("keeps visual dispatch idempotent if the source disappears after the first call", async () => {
