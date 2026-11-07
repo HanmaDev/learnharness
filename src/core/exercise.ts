@@ -17,7 +17,7 @@
 import { Type, type Static } from "typebox";
 import type { QuestionAnswerData, QuizQuestionType } from "./question-core.ts";
 
-export const EXERCISE_FORMATS = ["blanks", "order", "find-mistake", "match", "sql", "html"] as const;
+export const EXERCISE_FORMATS = ["blanks", "order", "find-mistake", "match", "sql", "html", "math"] as const;
 export type ExerciseFormat = (typeof EXERCISE_FORMATS)[number];
 
 const MD = " Renders markdown and LaTeX.";
@@ -29,12 +29,13 @@ export const exerciseInputObject = Type.Object({
 			"check = after the step's teaching (arrives behind the Check your understanding reveal).",
 	}),
 	nodeId: Type.String({ description: "REQUIRED plan node id (exactly one of this session's plan_init slugs)." }),
-	format: Type.Union([Type.Literal("blanks"), Type.Literal("order"), Type.Literal("find-mistake"), Type.Literal("match"), Type.Literal("sql"), Type.Literal("html")], {
+	format: Type.Union([Type.Literal("blanks"), Type.Literal("order"), Type.Literal("find-mistake"), Type.Literal("match"), Type.Literal("sql"), Type.Literal("html"), Type.Literal("math")], {
 		description:
 			"REQUIRED — blanks (fill gaps in `template`), order (`steps` in the correct order; shown shuffled), " +
 			"find-mistake (`lines` + the 1-based `mistakeLine`), match (`pairs`; right sides shown shuffled), " +
 			"sql (he writes a query against `setupSql`; graded against `referenceSql`'s result), " +
-			"html (he writes/edits HTML+CSS with a live preview; YOU grade it from his code).",
+			"html (he writes/edits HTML+CSS with a live preview; YOU grade it from his code), " +
+			"math (he types a formula/number in a visual editor; checked for mathematical equality with `answerLatex`).",
 	}),
 	question: Type.String({ description: "The instruction/question shown above the exercise." + MD }),
 	details: Type.Optional(Type.String({ description: "Optional extra context shown under the question." + MD })),
@@ -82,6 +83,13 @@ export const exerciseInputObject = Type.Object({
 				"sql only: YOUR correct query. His query is right when it returns the same rows and columns (column names may differ; row order matters only if yours has ORDER BY). Validated before he sees the exercise.",
 		}),
 	),
+	answerLatex: Type.Optional(
+		Type.String({
+			description:
+				"math only: the correct answer in LaTeX (an expression or number, e.g. 2x\\cos(x^2) or \\frac{3}{4}). Any mathematically equal form he types counts; relations/sets are left to your judgement.",
+		}),
+	),
+	acceptLatex: Type.Optional(Type.Array(Type.String(), { description: "math only: other answers to accept (e.g. a different but valid branch)." })),
 	starterCode: Type.Optional(
 		Type.String({ description: "sql/html only: code pre-filled in his editor (e.g. a half-written query, or markup to fix). Omit to start empty." }),
 	),
@@ -133,6 +141,9 @@ export function exerciseInputProblems(input: ExerciseToolInput): string[] {
 			if (!input.referenceSql?.trim()) problems.push("sql needs `referenceSql` (your correct query).");
 			break;
 		case "html":
+			break;
+		case "math":
+			if (!input.answerLatex?.trim()) problems.push("math needs `answerLatex` (the correct answer in LaTeX).");
 			break;
 		case "match":
 			if (!input.pairs || input.pairs.length < 3) problems.push("match needs `pairs` (3–10).");
@@ -207,7 +218,9 @@ export type ExerciseResponse =
 	/** His query and what it returned (graded client-side by running both). */
 	| { format: "sql"; query: string; matched: boolean; columns: string[]; rows: SqlCell[][]; error?: string; expectedRows?: number }
 	/** His markup; the teacher grades it. */
-	| { format: "html"; code: string };
+	| { format: "html"; code: string }
+	/** His formula (LaTeX) and the app's equivalence verdict. */
+	| { format: "math"; latex: string; verdict: "equal" | "different" | "undecided" };
 
 export type SqlCell = string | number | null;
 
@@ -281,6 +294,10 @@ export function gradeExercise(input: ExerciseToolInput, response: ExerciseRespon
 			break;
 		case "html":
 			return { graded: false, correct: false, score: 0, items: [] };
+		case "math":
+			if (response.format === "math" && response.verdict === "undecided") return { graded: false, correct: false, score: 0, items: [] };
+			items = [response.format === "math" && response.verdict === "equal"];
+			break;
 	}
 	const right = items.filter(Boolean).length;
 	return { correct: items.length > 0 && right === items.length, score: items.length ? right / items.length : 0, items };
@@ -334,6 +351,18 @@ export function exerciseResultForModel(input: ExerciseToolInput | undefined, res
 				out.note = "Grade this markup yourself against what you asked for; he has seen its live preview.";
 			}
 			break;
+		case "math":
+			if (response.format === "math") {
+				out.latex = response.latex;
+				out.check = response.verdict;
+				if (response.verdict === "undecided") {
+					delete out.correct;
+					delete out.score;
+					out.graded = false;
+					out.note = "The app could not decide equality (relation, set, or unusual notation) — judge his answer yourself.";
+				}
+			}
+			break;
 		case "match":
 			if (response.format === "match") {
 				out.pairs = (input.pairs ?? []).map((p, i) => ({
@@ -363,6 +392,8 @@ export function exerciseResponseComplete(input: ExerciseToolInput, response: Exe
 			return response.query.trim().length > 0;
 		case "html":
 			return response.code.trim().length > 0;
+		case "math":
+			return response.latex.trim().length > 0;
 	}
 }
 

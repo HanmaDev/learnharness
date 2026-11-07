@@ -9,6 +9,8 @@ import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
 import { useDictationGhost } from "@/components/dictation-state";
 import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
+import { MathField } from "@/components/math-field";
+import { mathEquivalent } from "@/components/math-check";
 import { cn } from "@/lib/utils";
 
 /**
@@ -36,7 +38,7 @@ export interface PracticeDockProps {
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string; parts?: Array<{ label: string; statement: string }>; timeLimitMin?: number };
+	input: { statement: string; parts?: Array<{ label: string; statement: string }>; timeLimitMin?: number; finalAnswerLatex?: string };
 	/** Fork: when the problem was posed (ms) — the timer's zero. */
 	posedAt?: number;
 	/** Fork: hints already asked for on this problem (from the record). */
@@ -89,6 +91,10 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 	}, [timerOn]);
 	const elapsed = now - startRef.current;
 	const photos = usePhotoAttachments();
+	// Fork: the final-answer math field (only when the problem has one).
+	const [finalAnswer, setFinalAnswer] = useState("");
+	const finalRef = useRef("");
+	const submittingRef = useRef(false);
 	const remaining = limitMin !== null ? limitMin * 60_000 - elapsed : null;
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
@@ -107,19 +113,33 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 	// Fork: the live (greyed) dictation words.
 	const dictationGhost = useDictationGhost(dictationAppend);
 
-	const submit = () => {
-		if (compactionRunning) return;
+	const submit = async () => {
+		if (compactionRunning || submittingRef.current) return;
 		const text = thinkingRef.current.trim();
 		const images = photos.ids;
-		if (text.length === 0 && images.length === 0) return;
+		const final = finalRef.current.trim();
+		if (text.length === 0 && images.length === 0 && final.length === 0) return;
 		if (photos.uploading) return;
-		thinkingRef.current = "";
-		setThinking("");
-		photos.clear();
-		// Fork: tag the part and the elapsed time so the teacher can grade
-		// per part and report time.
-		const tags = [parts ? `(${parts[partIdx]!.label})` : "", `[elapsed ${formatClock(Date.now() - startRef.current)}]`].filter(Boolean).join(" ");
-		onSubmit(`${tags}\n${text || "(photo of my work)"}`, images.length ? images : undefined);
+		submittingRef.current = true;
+		try {
+			// Fork: the final answer is checked here and the verdict rides along.
+			let finalLine = "";
+			if (final && input.finalAnswerLatex) {
+				const verdict = await mathEquivalent(input.finalAnswerLatex, final);
+				finalLine = `\nFinal answer: $${final}$ — app check: ${verdict === "equal" ? "EQUAL to the committed answer" : verdict === "different" ? "DIFFERENT from the committed answer" : "could not decide (judge it yourself)"}`;
+			}
+			thinkingRef.current = "";
+			setThinking("");
+			finalRef.current = "";
+			setFinalAnswer("");
+			photos.clear();
+			// Fork: tag the part and the elapsed time so the teacher can grade
+			// per part and report time.
+			const tags = [parts ? `(${parts[partIdx]!.label})` : "", `[elapsed ${formatClock(Date.now() - startRef.current)}]`].filter(Boolean).join(" ");
+			onSubmit(`${tags}\n${text || (images.length ? "(photo of my work)" : "")}${finalLine}`, images.length ? images : undefined);
+		} finally {
+			submittingRef.current = false;
+		}
 	};
 	const askHint = () => {
 		if (compactionRunning) return;
@@ -130,7 +150,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 	 * means the field is often never focused — the window-level Enter
 	 * (typing surfaces and buttons excluded) submits the trace. Mounted
 	 * while the dock is — collapsed bar included (the trace survives). */
-	useEnterSubmits(submit);
+	useEnterSubmits(() => void submit());
 
 	/* ── the collapsed bar ── */
 	if (!expanded) {
@@ -286,6 +306,21 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 				    question dock's — hint left, the SAME Button (h-9, px-3.5),
 				    one p-1 row. Corner radii concentric: shell 16 − m-1.5 (6) =
 				    field 10 − p-1 (4) = button 6. */}
+				{input.finalAnswerLatex && (
+					<div className="px-1.5 pb-1" data-testid="practice-final-answer">
+						<div className="px-1 pb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Final answer (optional)</div>
+						<MathField
+							value={finalAnswer}
+							onChange={(v) => {
+								finalRef.current = v;
+								setFinalAnswer(v);
+							}}
+							onEnter={() => void submit()}
+							ariaLabel="Final answer"
+							placeholder="Type your final answer"
+						/>
+					</div>
+				)}
 				<PhotoTray attach={photos} disabled={compactionRunning} />
 				<div className="flex items-center justify-between gap-2 p-1">
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
@@ -294,7 +329,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={(thinking.trim().length === 0 && photos.ids.length === 0) || photos.uploading || compactionRunning}
+						disabled={(thinking.trim().length === 0 && photos.ids.length === 0 && finalAnswer.trim().length === 0) || photos.uploading || compactionRunning}
 						onClick={() => submit()}
 						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
 					>

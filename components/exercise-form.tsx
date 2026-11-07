@@ -22,6 +22,8 @@ import {
 import { cn } from "@/lib/utils";
 import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { CodeEditor } from "@/components/code-editor";
+import { MathField } from "@/components/math-field";
+import { mathEquivalent } from "@/components/math-check";
 import { describeSchema, runSql, type SqlRun } from "@/components/sql-runner";
 import { buildDemoSrcDoc, INITIAL_DEMO_BRIDGE_STATE, reduceDemoBridgeState, type DemoBridgeState } from "@/components/artifacts/demo-card";
 import { htmlPreviewDocument } from "@/components/artifacts/html-preview-card";
@@ -115,6 +117,9 @@ export function ExerciseForm({
 			if (isDictationActive()) await finishDictation();
 			let finalResponse = dontKnow ? null : response;
 			if (finalResponse?.format === "sql") finalResponse = await gradeSqlResponse(input, finalResponse.query);
+			if (finalResponse?.format === "math") {
+				finalResponse = { format: "math", latex: finalResponse.latex, verdict: await mathEquivalent(input.answerLatex ?? "", finalResponse.latex, input.acceptLatex) };
+			}
 			const answer = buildExerciseAnswer(
 				input,
 				{ response: finalResponse, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
@@ -155,6 +160,16 @@ export function ExerciseForm({
 				)}
 				{input.format === "html" && response?.format === "html" && (
 					<HtmlField code={response.code} onChange={(code) => setResponse({ format: "html", code })} />
+				)}
+				{input.format === "math" && response?.format === "math" && (
+					<MathField
+						value={response.latex}
+						onChange={(latex) => setResponse({ format: "math", latex, verdict: "undecided" })}
+						onEnter={() => void submit()}
+						ariaLabel="Your answer"
+						testId="exercise-math"
+						placeholder="Your answer"
+					/>
 				)}
 			</div>
 			<div className="flex items-center gap-3 border-t border-border/60 px-4 py-2">
@@ -267,6 +282,7 @@ const FORMAT_LABEL: Record<ExerciseToolInput["format"], string> = {
 	match: "match pairs",
 	sql: "write the query",
 	html: "write the markup",
+	math: "your answer",
 };
 const HINT: Record<ExerciseToolInput["format"], string> = {
 	blanks: "Fill every gap (Tab moves to the next).",
@@ -275,6 +291,7 @@ const HINT: Record<ExerciseToolInput["format"], string> = {
 	match: "Click a left item, then its partner on the right.",
 	sql: "Write a query; Ctrl+Enter runs it. Submit when the result looks right.",
 	html: "Edit the markup; the preview updates as you type.",
+	math: "Type like on paper: / fraction, ^ power, sqrt root. Enter submits.",
 };
 
 const MAX_SHOWN_ROWS = 50;
@@ -302,6 +319,8 @@ function initialResponse(input: ExerciseToolInput, seed: string): ExerciseRespon
 			return { format: "sql", query: input.starterCode ?? "", matched: false, columns: [], rows: [] };
 		case "html":
 			return { format: "html", code: input.starterCode ?? "" };
+		case "math":
+			return { format: "math", latex: "", verdict: "undecided" };
 		default:
 			return null;
 	}
@@ -662,6 +681,7 @@ export function ExerciseSolution({ input }: { input: ExerciseToolInput }) {
 			{input.format === "sql" && (
 				<pre className="overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap text-green-500">{input.referenceSql}</pre>
 			)}
+			{input.format === "math" && <ToolContentResponse>{`$${input.answerLatex}$`}</ToolContentResponse>}
 			{input.format === "match" && (
 				<ul className="flex flex-col gap-1">
 					{(input.pairs ?? []).map((p, i) => (
@@ -770,13 +790,27 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 					)}
 				</div>
 			)}
+			{input.format === "math" && response.format === "math" && (
+				<div className="flex flex-col gap-1.5">
+					<div className="flex items-center gap-2">
+						<Mark ok={result.correct} />
+						<ToolContentResponse>{`$${response.latex}$`}</ToolContentResponse>
+					</div>
+					{response.verdict === "undecided" && <div className="text-xs text-muted-foreground">The app couldn't decide — the teacher checks this one.</div>}
+					{response.verdict === "different" && (
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							Answer: <span className="text-green-500"><ToolContentResponse>{`$${input.answerLatex}$`}</ToolContentResponse></span>
+						</div>
+					)}
+				</div>
+			)}
 			{input.format === "html" && response.format === "html" && (
 				<div className="grid gap-2 lg:grid-cols-2">
 					<pre className="max-h-72 overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap">{response.code}</pre>
 					<LivePreview code={response.code} />
 				</div>
 			)}
-			{result.graded !== false && input.format !== "sql" && (
+			{result.graded !== false && input.format !== "sql" && input.format !== "math" && (
 				<div className="mt-1 text-xs text-muted-foreground">
 					{Math.round(result.score * 100)}% right ({result.items.filter(Boolean).length}/{result.items.length})
 				</div>

@@ -97,6 +97,12 @@ export const problemInputObject = Type.Object({
 			{ minItems: 2, maxItems: 8, description: "Optional parts (a), (b), (c)… — each answered and graded separately. Put every part's solution in modelSolution, labeled." },
 		),
 	),
+	finalAnswerLatex: Type.Optional(
+		Type.String({
+			description:
+				"Optional, HIDDEN like modelSolution: the final answer in LaTeX when the problem has one (a number or expression). The learner then gets a math field for his final answer and you receive the app's equality check with his submission.",
+		}),
+	),
 	timeLimitMin: Type.Optional(
 		Type.Number({ minimum: 1, maximum: 300, description: "Optional time limit in minutes (olympiad/competition conditions). The learner sees a countdown; it never blocks him." }),
 	),
