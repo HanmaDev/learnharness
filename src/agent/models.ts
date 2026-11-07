@@ -22,6 +22,10 @@ import { createClaudeCodeProvider } from "./claude-code/provider.ts";
 import { streamClaudeCode } from "./claude-code/stream.ts";
 import { nativeSubscriptionId, nativeSubscriptionModel } from "./subscription-bridge.ts";
 import { nativeSubscriptionStream } from "./subscription-stream.ts";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
+
+const SERBIAN_OUTPUT_INSTRUCTION = `
+Language for this learner: write all learner-facing generated content in Serbian, always in Latin script (latinica), never Cyrillic. This includes explanations, plans, questions, answer choices, feedback, knowledge-graph names and descriptions, visual labels, demonstrations, and generated documents. If the learner requests another language for a specific task, follow that request. Do not translate programming code, identifiers, SQL keywords, proper names, exact quotations, or other material that must remain verbatim; explain foreign terminology in Serbian. Keep tool names, field names, identifiers, and required machine-readable formats exactly as specified. Preserve source facts and distinguish translation from the original wording.`;
 
 /** App identity is immutable and shared by Models and every native Agent.
  * Agent's default Pi attribution otherwise overrides the Models identity. */
@@ -157,6 +161,22 @@ export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (
 		// = off on pi-ai's scale). Built-ins keep the factory clamp; custom
 		// requests re-resolve thinking against their current metadata below.
 		streamFn: (requestModel, context, options) => {
+			// Apply the learner's language across teaching and background agents,
+			// while keeping the existing tool declarations and transcript intact.
+			const messages = [...context.messages];
+			const firstSystem = messages.findIndex((message) => message.role === "system");
+			if (firstSystem >= 0) {
+				const message = messages[firstSystem];
+				if (message?.role === "system") {
+					const content = typeof message.content === "string"
+						? `${message.content}\n\n${SERBIAN_OUTPUT_INSTRUCTION}`
+						: [...message.content, { type: "text" as const, text: SERBIAN_OUTPUT_INSTRUCTION }];
+					messages[firstSystem] = { ...message, content };
+				}
+			} else {
+				messages.unshift({ role: "system", content: SERBIAN_OUTPUT_INSTRUCTION, timestamp: Date.now() });
+			}
+			const localizedContext = normalizeContext({ messages });
 			// Read the slot preference for every operation, not just engine creation.
 			// Unset adds NOTHING: native defaults/env and explicit caller options survive.
 			const retention = cacheRetention?.();
@@ -176,11 +196,11 @@ export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (
 				const currentLevel = thinkingPreference
 					? clampThinkingLevel(currentModel, thinkingPreference)
 					: defaultThinkingLevel(currentModel);
-				return current.streamSimple(permitImages(currentModel), context, { ...requestOptions, reasoning: currentLevel === "off" ? undefined : currentLevel });
+				return current.streamSimple(permitImages(currentModel), localizedContext, { ...requestOptions, reasoning: currentLevel === "off" ? undefined : currentLevel });
 			}
 			const purpose = typeof background === "function" ? background : () => background;
 			const stream = spec.provider === "chatgpt" ? chatGPTStream(purpose, lifecycle) : nativeId ? nativeSubscriptionStream(models.getProvider(nativeId)!, purpose, lifecycle) : models.streamSimple.bind(models);
-			return stream(requestModel, context, requestOptions);
+			return stream(requestModel, localizedContext, requestOptions);
 		},
 	};
 }
