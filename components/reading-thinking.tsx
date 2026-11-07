@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
+import { useDictationGhost } from "@/components/dictation-state";
 import { PathInput } from "@/components/path-input";
 
 /**
@@ -50,10 +51,10 @@ export function ReadingThinkingField({
 		setDraft(next);
 		onChange(next);
 	}, [onChange]);
-	useDictationTarget(
-		useCallback((text: string) => applyDraft(joinDictation(draftRef.current, text)), [applyDraft]),
-		claim,
-	);
+	const dictationAppend = useCallback((text: string) => applyDraft(joinDictation(draftRef.current, text)), [applyDraft]);
+	useDictationTarget(dictationAppend, claim);
+	// Fork: the live (greyed) dictation words.
+	const dictationGhost = useDictationGhost(dictationAppend);
 	return (
 		<div
 			data-testid="reading-thinking-field"
@@ -64,6 +65,7 @@ export function ReadingThinkingField({
 			</div>
 			<PathInput
 				value={draft}
+				ghostText={dictationGhost}
 				onValueChange={applyDraft}
 				/* py-0.5 (owner round, 2026-10-07): the scrollbar fix. Source
 				   Sans 3's font box is 22px at 16px; lh-input's 1.25 leading

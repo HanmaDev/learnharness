@@ -20,6 +20,10 @@ export type PathInputProps = Omit<React.HTMLAttributes<HTMLDivElement>, "childre
 	defaultDropTarget?: boolean;
 	/** Native text-input semantics: strip CR/LF and leave Enter to the caller. */
 	singleLine?: boolean;
+	/** Fork: live dictation words, drawn greyed after the text by a CSS
+	 *  pseudo-element — never part of the value, the selection, or the DOM
+	 *  text the editor reads. */
+	ghostText?: string;
 };
 
 type ChipHost = { host: HTMLElement; path: string };
@@ -33,7 +37,7 @@ type Controller = {
  * views of it. React never reconciles the editable DOM after a native mutation.
  */
 export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(function PathInput({
-	value, onValueChange, placeholder, autoFocus, defaultDropTarget = false, singleLine = false, className,
+	value, onValueChange, placeholder, autoFocus, defaultDropTarget = false, singleLine = false, className, ghostText,
 	onKeyDown, onFocus, onBlur, onInput, onPaste, onCopy, onCut,
 	onCompositionStart, onCompositionEnd, ...props
 }, forwardedRef) {
@@ -270,6 +274,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 
 	React.useLayoutEffect(() => { controllerRef.current?.external(value); }, [value, singleLine]);
 
+	const ghost = ghostText ? (value && !/\s$/.test(value) ? " " : "") + ghostText : undefined;
 	return <>
 		<div
 			{...props}
@@ -284,7 +289,8 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			data-empty={initial.current.value.length === 0 ? "true" : "false"}
 			data-file-path-default={defaultDropTarget ? "" : undefined}
 			data-placeholder={placeholder}
-			className={cn("block w-full min-w-0 outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-muted-foreground data-[empty=true]:before:content-[attr(data-placeholder)]", singleLine ? "whitespace-pre break-normal overflow-x-auto overflow-y-hidden" : "whitespace-pre-wrap break-words overflow-y-auto", className)}
+			data-ghost={ghost}
+			className={cn("block w-full min-w-0 outline-none data-[ghost]:before:content-none data-[ghost]:after:pointer-events-none data-[ghost]:after:text-muted-foreground/70 data-[ghost]:after:content-[attr(data-ghost)] data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-muted-foreground data-[empty=true]:before:content-[attr(data-placeholder)]", singleLine ? "whitespace-pre break-normal overflow-x-auto overflow-y-hidden" : "whitespace-pre-wrap break-words overflow-y-auto", className)}
 			onKeyDown={(event) => {
 				if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229) { event.stopPropagation(); return; }
 				onKeyDown?.(event);

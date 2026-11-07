@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
+import { useDictationGhost } from "@/components/dictation-state";
 import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { MarkdownInsideControl } from "@/components/md-blocks";
@@ -351,8 +352,7 @@ function QuestionDockForm({
 	// mode owns "Your answer", select modes own "Your thinking". The claim
 	// is effect-scoped, so the question unmounting releases it and
 	// dictation falls back to the composer automatically.
-	useDictationTarget(
-		useCallback(
+	const dictationAppend = useCallback(
 			(t: string) => {
 				// Ref-first (see the refs block above): the join is computed from
 				// the mirror, then both mirrors agree with state — a submit
@@ -368,11 +368,15 @@ function QuestionDockForm({
 				}
 			},
 			[qd.mode],
-		),
+		);
+	useDictationTarget(
+		dictationAppend,
 		// Released while a teach check sits unrevealed (owner 2026-10-03):
 		// the reading-thinking field owns dictated speech during the reading.
 		dictationClaim,
 	);
+	// Fork: the live (greyed) words, shown on whichever field receives them.
+	const dictationGhost = useDictationGhost(dictationAppend);
 
 	const toggle = (idx: number) => setSel(toggleOption(selectMode, sel, idx));
 
@@ -862,6 +866,7 @@ function QuestionDockForm({
 					{qd.mode === "text" ? (
 						<PathInput
 							value={text}
+							ghostText={dictationGhost}
 							onValueChange={(value) => {
 								answerTextRef.current = value;
 								setText(value);
@@ -890,6 +895,7 @@ function QuestionDockForm({
 						<PathInput
 							ref={thinkingRef}
 							value={thinking}
+							ghostText={dictationGhost}
 							onValueChange={(value) => {
 								thinkingTextRef.current = value;
 								setThinking(value);

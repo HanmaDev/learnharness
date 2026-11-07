@@ -5,7 +5,7 @@ import { parseHTML } from "linkedom";
 import { useDictation, type Dictation } from "../components/dictation.tsx";
 import { notifySettingsSaved } from "../components/settings-signal.ts";
 import { useDictationLanguage } from "../components/dictation-preference.ts";
-import { isDictationActive, useDictationActive } from "../components/dictation-state.ts";
+import { COMPOSER_GHOST, isDictationActive, useDictationActive, useDictationGhost } from "../components/dictation-state.ts";
 import type { UserSettings } from "../src/core/index.ts";
 
 function deferred<T>() {
@@ -26,6 +26,9 @@ class Socket extends EventTarget {
 	close() { this.readyState = 3; }
 	open() { this.readyState = Socket.OPEN; this.dispatchEvent(new Event("open")); }
 	end(code = 1000) { this.close(); this.dispatchEvent(Object.assign(new Event("close"), { code })); }
+	message(payload: unknown) {
+		this.dispatchEvent(Object.assign(new Event("message"), { data: JSON.stringify(payload) }));
+	}
 	final(text: string) {
 		this.dispatchEvent(Object.assign(new Event("message"), {
 			data: JSON.stringify({ type: "Results", is_final: true, channel: { alternatives: [{ transcript: text }] } }),
@@ -58,6 +61,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		captures: 0,
 		stops: 0,
 		appends: [] as string[],
+		ghost: "",
 	};
 	Socket.all = [];
 	const previous = new Map<string, PropertyDescriptor | undefined>();
@@ -100,6 +104,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		latest = useDictation({ append: (text) => state.appends.push(text) });
 		setting = useDictationLanguage();
 		state.active = useDictationActive();
+		state.ghost = useDictationGhost(COMPOSER_GHOST);
 		return null;
 	}
 	let root = createRoot(document.getElementById("root")!);
@@ -319,4 +324,42 @@ test("microphone permission resolving after unmount immediately stops the late s
 	assert.equal(f.state.stops, 1);
 	assert.equal(Socket.all.length, 0);
 	assert.equal(isDictationActive(), false);
+});
+
+test("fork: live dictation — interims grey the composer, utterances commit as they end, Esc drops only the grey", async () => {
+	const f = await fixture("en");
+	await f.mount();
+	await act(async () => { f.dictation.toggle(); });
+	const ws = Socket.all[0]!;
+	const url = new URL(ws.url);
+	assert.equal(url.searchParams.get("interim_results"), "true");
+	assert.equal(url.searchParams.get("utterance_end_ms"), "1000");
+	const r = (transcript: string, is_final: boolean, speech_final = false) =>
+		({ type: "Results", is_final, speech_final, channel: { alternatives: [{ transcript }] } });
+	await act(async () => { ws.open(); ws.message(r("select name", false)); });
+	assert.equal(f.state.ghost, "select name", "the hypothesis shows greyed");
+	assert.deepEqual(f.state.appends, []);
+	await act(async () => { ws.message(r("Select name from users.", true, true)); });
+	assert.deepEqual(f.state.appends, ["Select name from users."], "a finished utterance commits immediately");
+	assert.equal(f.state.ghost, "");
+	await act(async () => { ws.message(r("where age", false)); });
+	assert.equal(f.state.ghost, "where age");
+	await act(async () => { f.dictation.cancel(); });
+	assert.deepEqual(f.state.appends, ["Select name from users."], "Esc keeps committed text, drops the grey");
+	assert.equal(f.state.ghost, "");
+	assert.equal(f.dictation.phase, "idle");
+});
+
+test("fork: stop commits the locked tail when Deepgram closes", async () => {
+	const f = await fixture("en");
+	await f.mount();
+	await act(async () => { f.dictation.toggle(); });
+	const ws = Socket.all[0]!;
+	await act(async () => { ws.open(); ws.final("half a sentence"); });
+	assert.deepEqual(f.state.appends, []);
+	assert.equal(f.state.ghost, "half a sentence");
+	await act(async () => { f.dictation.stop(); });
+	await act(async () => { ws.end(); });
+	assert.deepEqual(f.state.appends, ["half a sentence"]);
+	assert.equal(f.state.ghost, "");
 });

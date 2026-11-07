@@ -23,15 +23,23 @@ describe("Nova-3 dictation language contract", () => {
 		assert.deepEqual(labels, [...labels].sort((a, b) => a.localeCompare(b, "en")));
 	});
 
-	it("only language varies in the streaming URL; all tuned parameters survive", () => {
+	it("only language varies in the streaming URL; the live (Claude Code-style) parameters survive", () => {
 		for (const { code: language } of DICTATION_LANGUAGES) {
 			const url = new URL(deepgramListenUrl(language));
 			assert.equal(url.origin + url.pathname, "wss://api.deepgram.com/v1/listen");
 			assert.deepEqual(Object.fromEntries(url.searchParams), {
 				model: "nova-3", encoding: "linear16", sample_rate: "16000", channels: "1",
-				smart_format: "true", punctuate: "true", endpointing: "300", language,
+				smart_format: "true", punctuate: "true", endpointing: "300",
+				interim_results: "true", utterance_end_ms: "1000", vad_events: "true", language,
 			});
 		}
+	});
+
+	it("keyterms ride as repeated params for English/multi only", () => {
+		const en = new URL(deepgramListenUrl("en", ["SELECT", "colspan", "select"]));
+		assert.deepEqual(en.searchParams.getAll("keyterm"), ["SELECT", "colspan"], "deduped case-insensitively");
+		assert.deepEqual(new URL(deepgramListenUrl("multi", ["tbody"])).searchParams.getAll("keyterm"), ["tbody"]);
+		assert.deepEqual(new URL(deepgramListenUrl("sr", ["tbody"])).searchParams.getAll("keyterm"), [], "unsupported languages send none");
 	});
 
 	it("old records default to English and explicit preferences resolve without a migration", () => {

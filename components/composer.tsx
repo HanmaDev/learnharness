@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRightIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PathInput } from "@/components/path-input";
+import { COMPOSER_GHOST, useDictationGhost } from "@/components/dictation-state";
 import { AttachFilesButton } from "@/components/attach-files-button";
 
 /**
@@ -147,6 +148,8 @@ export function Composer({
 	};
 	const ownInputRef = useRef<HTMLDivElement>(null);
 	const editorRef = inputRef ?? ownInputRef;
+	// Fork: live dictation words, greyed after the draft.
+	const dictationGhost = useDictationGhost(COMPOSER_GHOST);
 	return (
 		<form
 			data-testid="composer"
@@ -160,6 +163,7 @@ export function Composer({
 				ref={editorRef}
 				value={value}
 				onValueChange={onChange}
+				ghostText={dictationGhost}
 				defaultDropTarget
 				onKeyDown={(e) => {
 					// Esc ends dictation before anything else Esc might someday mean

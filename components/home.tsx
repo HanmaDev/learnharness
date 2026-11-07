@@ -14,6 +14,7 @@ import { SidebarToggle } from "@/components/sidebar";
 import { StatsBar } from "@/components/stats-bar";
 import { OPENING_PROMPT_FAILURE } from "@/components/opening-prompt";
 import { PathInput } from "@/components/path-input";
+import { COMPOSER_GHOST, useDictationGhost } from "@/components/dictation-state";
 import { AttachFilesButton } from "@/components/attach-files-button";
 import { SessionStarter } from "@/components/start-session";
 import type { TurnUsage } from "@/src/core";
@@ -59,6 +60,8 @@ export function Home({
 			setTopic(v);
 		},
 	});
+	// Fork: live dictation words, greyed after the topic.
+	const dictationGhost = useDictationGhost(COMPOSER_GHOST);
 	const [busy, setBusy] = useState(false);
 	const startingRef = useRef(false);
 	const starterRef = useRef(new SessionStarter());
@@ -254,6 +257,7 @@ export function Home({
 					<PathInput
 						ref={topicInputRef}
 						value={topic}
+						ghostText={dictationGhost}
 						onValueChange={(value) => {
 							topicRef.current = value;
 							setTopic(value);

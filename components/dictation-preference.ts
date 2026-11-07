@@ -7,7 +7,7 @@ import {
 } from "@/src/core";
 import { notifySettingsSaved, onSettingsSaved } from "@/components/settings-signal";
 
-const INITIAL = { language: undefined as DictationLanguage | undefined, saving: false, error: null as string | null };
+const INITIAL = { language: undefined as DictationLanguage | undefined, keyterms: [] as string[], saving: false, error: null as string | null };
 
 /** One confirmed preference and one write in flight, shared by every surface.
  * The factory keeps transport tests isolated without a second persistence path.
@@ -40,8 +40,9 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 				if (body.settings !== null && record === null) throw new Error();
 				if (version !== revision) return getLanguage();
 				const language = record?.dictation?.language ?? FACTORY_SETTINGS.dictation.language;
+				const keyterms = record?.dictation?.keyterms ?? [];
 				needsRead = false;
-				publish({ language, error: null });
+				publish({ language, keyterms, error: null });
 				return language;
 			} catch {
 				if (version !== revision) return getLanguage();
@@ -55,7 +56,10 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 		return reading;
 	}
 
-	function save(language: DictationLanguage): Promise<boolean> {
+	/** The section is written whole: the language AND the word list travel
+	 *  together, so saving one never wipes the other (fork). An empty list
+	 *  is omitted — the upstream body shape stays {language}. */
+	function save(language: DictationLanguage, keyterms: string[] = snapshot.keyterms): Promise<boolean> {
 		// A different selection must never inherit the previous write's success.
 		if (writing || snapshot.language === undefined) return Promise.resolve(false);
 		revision++;
@@ -64,18 +68,18 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 			try {
 				const res = await request("/api/settings/dictation", {
 					method: "PUT", headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ language }),
+					body: JSON.stringify(keyterms.length ? { language, keyterms } : { language }),
 				});
 				if (!res.ok) throw new Error();
 				const body = await res.json() as { settings: UserSettings };
 				const confirmed = body.settings?.dictation?.language;
 				if (!isDictationLanguage(confirmed)) throw new Error();
 				needsRead = false;
-				publish({ language: confirmed, error: null });
+				publish({ language: confirmed, keyterms: body.settings?.dictation?.keyterms ?? [], error: null });
 				saved();
 				return true;
 			} catch {
-				publish({ error: "Could not save dictation language. Try again." });
+				publish({ error: "Could not save dictation settings. Try again." });
 				return false;
 			} finally {
 				writing = null;
@@ -95,8 +99,16 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 		}
 	}
 
+	/** Save the word list, keeping the confirmed language. */
+	function saveKeyterms(keyterms: string[]): Promise<boolean> {
+		if (snapshot.language === undefined) return Promise.resolve(false);
+		return save(snapshot.language, keyterms);
+	}
+
 	return {
-		load, save, getLanguage,
+		load, save, saveKeyterms, getLanguage,
+		/** Synchronous: the confirmed list (empty until the first read). */
+		getKeyterms: () => snapshot.keyterms,
 		getSnapshot: () => snapshot,
 		getServerSnapshot: () => INITIAL,
 		subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -128,5 +140,5 @@ function subscribe(listener: () => void) {
 
 export function useDictationLanguage() {
 	const snapshot = useSyncExternalStore(subscribe, store.getSnapshot, store.getServerSnapshot);
-	return { ...snapshot, load: store.load, save: store.save, getLanguage: store.getLanguage };
+	return { ...snapshot, load: store.load, save: store.save, saveKeyterms: store.saveKeyterms, getLanguage: store.getLanguage, getKeyterms: store.getKeyterms };
 }

@@ -4,12 +4,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2Icon, MicIcon } from "lucide-react";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
 import { Hint } from "@/components/ui/hint";
-import { deepgramListenUrl, type DictationLanguage } from "@/src/core";
+import { createTranscriptAssembler, deepgramListenUrl, normalizeKeyterms, type DictationLanguage } from "@/src/core";
 import { useDictationLanguage } from "@/components/dictation-preference";
-import { setDictationActive } from "@/components/dictation-state";
+import { clearDictationGhost, COMPOSER_GHOST, setDictationActive, setDictationGhost } from "@/components/dictation-state";
 export { isDictationActive } from "@/components/dictation-state";
 
 /**
+ * FORK (2026-11-07, live dictation like Claude Code's /voice): interim
+ * results are ON. Heard-but-uncommitted words render greyed at the end of
+ * the target input (useDictationGhost); each utterance commits into the
+ * input the moment Deepgram finalizes it (speech_final / UtteranceEnd —
+ * see createTranscriptAssembler). Esc discards only the greyed words;
+ * committed text stays (Ctrl+Z undoes it). Mic processing: echo
+ * cancellation only — noise suppression and AGC distort speech for ASR.
+ * Lesson vocabulary + the user's word list ride as nova-3 keyterms. The
+ * notes below describe the upstream deferred design and are kept for
+ * history where they still apply (graph, token, reconnect, finish).
+ *
  * Voice dictation — the cloud engine (STT wave 1, 2026-09-17).
  *
  * Architecture (docs/research/stt.md): the renderer captures mic audio in
@@ -91,6 +102,10 @@ export { isDictationActive } from "@/components/dictation-state";
  * pauses), so the socket never idles — no KeepAlive needed.
  */
 // URL construction lives in the browser-safe core; only language varies.
+
+/** Fork: how long stop() waits for Deepgram's last finals before forcing
+ *  teardown (was 3 s — long utterances lost their tail). */
+export const STOP_SAFETY_MS = 6000;
 
 /** Meter tuning — the owner's tested values, see the file header. */
 const METER_FLOOR_DB = -50;
@@ -281,8 +296,14 @@ export type Dictation = {
  * composer fallback; the mounted question form's claim wins while a
  * question waits.
  */
-export function useDictation({ append }: { append: (text: string) => void }): Dictation {
-	const { getLanguage } = useDictationLanguage();
+export function useDictation({ append, keyterms }: {
+	append: (text: string) => void;
+	/** Lesson vocabulary for this page (fork) — read at each start. */
+	keyterms?: () => readonly string[];
+}): Dictation {
+	const { getLanguage, getKeyterms } = useDictationLanguage();
+	const keytermsRef = useRef(keyterms);
+	keytermsRef.current = keyterms;
 	const [phase, setPhase] = useState<DictationPhase>("idle");
 	const [error, setError] = useState<string | null>(null);
 	/** Latest RMS from the worklet — the meter samples this (dictate pattern). */
@@ -314,28 +335,34 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	const genRef = useRef(0); // stale-handler guard (dictate pattern)
 	const safetyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const reconnectsRef = useRef(0);
-	/** The deferred transcript (owner round 2): finals land here during the
-	 *  run and flush into the primary input once, at teardown. */
-	const bufferRef = useRef<string[]>([]);
+	/** The live transcript (fork): locked segments + the current hypothesis;
+	 *  utterances commit into the primary input as they finish. */
+	const assemblerRef = useRef(createTranscriptAssembler());
 	/** Resolvers waiting for the run to fully end (finish(), owner
 	 *  2026-10-01): released by cleanup() — every terminal path runs it. */
 	const waitersRef = useRef<Array<() => void>>([]);
 
-	/** Flush the buffered transcript into the primary input — question claim
-	 *  first, composer fallback. Called exactly once per run, at cleanup; the
-	 *  buffer clears itself so double-cleanup is a no-op. */
+	/** Commit text into the primary input — question claim first, composer
+	 *  fallback — and repaint the greyed remainder on whichever input that is. */
+	const deliver = useCallback((text: string | null) => {
+		if (text) (questionTarget ?? appendRef.current)(text);
+		setDictationGhost(questionTarget ?? COMPOSER_GHOST, assemblerRef.current.pending());
+	}, []);
+
+	/** End of run: commit whatever was heard (the last hypothesis too — a
+	 *  safety-net teardown must not lose speech). Cancel resets first, so
+	 *  this commits nothing then. Idempotent: the assembler empties itself. */
 	const flush = useCallback(() => {
-		if (bufferRef.current.length === 0) return;
-		const text = bufferRef.current.join(" ");
-		bufferRef.current = [];
-		(questionTarget ?? appendRef.current)(text);
+		const rest = assemblerRef.current.drain(true);
+		if (rest) (questionTarget ?? appendRef.current)(rest);
+		clearDictationGhost();
 	}, []);
 
 	/** Full teardown of one run's machinery. Idempotent; generation-guarded by callers. */
 	const cleanup = useCallback((warmNext = true) => {
 		genRef.current++;
 		setDictationActive(false);
-		flush(); // the deferred transcript appears when the run ends (owner round 2)
+		flush(); // commit the tail; the greyed preview clears (fork)
 		if (safetyRef.current) {
 			clearTimeout(safetyRef.current);
 			safetyRef.current = null;
@@ -367,11 +394,11 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 
 	/** Open the Deepgram socket and wire its messages. `gen` guards staleness. */
 	const openSocket = useCallback(
-		(gen: number, token: string, language: DictationLanguage) => {
+		(gen: number, token: string, language: DictationLanguage, terms: readonly string[]) => {
 			// Minted JWTs authenticate via the "bearer" subprotocol — ["token",
 			// jwt] is rejected at the handshake (verified live; "token" is for
 			// raw API keys only, as in the owner's pi dictate extension).
-			const ws = new WebSocket(deepgramListenUrl(language), ["bearer", token]);
+			const ws = new WebSocket(deepgramListenUrl(language, terms), ["bearer", token]);
 			wsRef.current = ws;
 
 			ws.addEventListener("open", () => {
@@ -391,12 +418,9 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 				} catch {
 					return;
 				}
-				if (msg.type === "Results") {
-					const text: string | undefined = msg.channel?.alternatives?.[0]?.transcript;
-					// Only finals stream (interim_results=false). DEFERRED (owner
-					// round 2): they buffer here and reach the input once, at
-					// teardown — the meter is the only live feedback.
-					if (msg.is_final && text) bufferRef.current.push(text);
+				if (msg?.type === "Results" || msg?.type === "UtteranceEnd") {
+					// Fork: live — finished utterances commit now, the rest greys.
+					deliver(assemblerRef.current.push(msg));
 				}
 			});
 			ws.addEventListener("close", (ev) => {
@@ -413,7 +437,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 					reconnectsRef.current++;
 					mintFreshToken() // always FRESH — a stale warm token is the likely culprit
 						.then((t) => {
-							if (gen === genRef.current) openSocket(gen, t, language);
+							if (gen === genRef.current) openSocket(gen, t, language, terms);
 						})
 						.catch(() => {
 							if (gen === genRef.current) {
@@ -427,7 +451,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 				}
 			});
 		},
-		[cleanup],
+		[cleanup, deliver],
 	);
 
 	const start = useCallback(async () => {
@@ -435,12 +459,16 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		setError(null);
 		setPhase("connecting");
 		reconnectsRef.current = 0;
-		bufferRef.current = []; // fresh run, fresh buffer (round 2)
+		assemblerRef.current.reset(); // fresh run, fresh transcript
+		clearDictationGhost();
 		pendingRef.current = []; // fresh run, fresh queue (mitigation A)
 		const gen = ++genRef.current;
 		let language: DictationLanguage;
+		let terms: string[];
 		try {
 			language = await getLanguage();
+			// The user's own list first, then this page's lesson vocabulary.
+			terms = normalizeKeyterms([...getKeyterms(), ...(keytermsRef.current?.() ?? [])]);
 		} catch (e) {
 			if (gen !== genRef.current) return;
 			setError(e instanceof Error ? e.message : "Dictation language unavailable");
@@ -458,7 +486,9 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		const tokenPromise = warmTokens.mint();
 		tokenPromise.catch(() => {}); // surfaced below; no unhandled rejection
 		const micPromise = navigator.mediaDevices.getUserMedia({
-			audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+			// Fork: noise suppression + AGC distort speech for recognition
+			// (Deepgram's own guidance) — echo cancellation stays for speakers.
+			audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: false },
 		});
 		let stream: MediaStream;
 		try {
@@ -524,8 +554,8 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		if (gen !== genRef.current) return;
 		// Mitigation B: the handshake fires the moment the graph is live,
 		// overlapping any remaining token wait — mic-gated, never before it.
-		openSocket(gen, token, language);
-	}, [openSocket, cleanup, getLanguage]);
+		openSocket(gen, token, language, terms);
+	}, [openSocket, cleanup, getLanguage, getKeyterms]);
 
 	const stop = useCallback(() => {
 		const gen = genRef.current;
@@ -553,7 +583,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 			// does, the safety net ends the run anyway (dictate pattern).
 			safetyRef.current = setTimeout(() => {
 				if (gen === genRef.current) cleanup();
-			}, 3000);
+			}, STOP_SAFETY_MS);
 		} else {
 			cleanup();
 		}
@@ -564,7 +594,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		// Discard first, teardown second — cleanup() flushes, and the now-empty
 		// buffer makes that flush a no-op. Also kills a "stopping" run: the
 		// flush already underway is abandoned (its timer is cleared inside).
-		bufferRef.current = [];
+		assemblerRef.current.reset();
 		cleanup();
 	}, [phase, cleanup]);
 
@@ -604,7 +634,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		return () => {
 			// Navigation cancels capture: invalidate every pending await before
 			// releasing resources, and never append into a different page's input.
-			bufferRef.current = [];
+			assemblerRef.current.reset();
 			cleanup(false);
 		};
 	}, [cleanup]);

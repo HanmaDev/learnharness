@@ -63,6 +63,7 @@ import { GraphContextCard, type GraphContextData } from "@/components/graph-cont
 import { TopBar } from "@/components/top-bar";
 import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
 import type { LhViewMessage } from "@/src/core";
+import { extractKeyterms } from "@/src/core";
 import { PhaseChip, PhaseDivider } from "@/components/phase-divider";
 import {
 	CompactionCutDivider,
@@ -706,10 +707,15 @@ export function Chat({
 		];
 	}, []);
 	useFieldCycle(cycleChatFields);
+	// Fork: the lesson's vocabulary rides dictation as keyterms — read
+	// lazily at each start from the latest messages.
+	const messagesForTermsRef = useRef(messages);
+	messagesForTermsRef.current = messages;
 	const dictation = useDictation({
 		// Ref-first (see textRef): the join is computed from the mirror so a
 		// send resuming after `await finish()` reads the dictated tail.
 		append: (t) => applyText(joinDictation(textRef.current, t)),
+		keyterms: () => extractKeyterms(lessonTexts(messagesForTermsRef.current)),
 	});
 	/* When a dictation run ends, the bare composer takes focus (owner
 	 * 2026-10-01) — the hands are already on the keyboard from the stop.
@@ -1865,6 +1871,27 @@ export type EscAbortTarget = "mermaid" | "plan" | "setup" | "question" | "proble
  * (owner report, 2026-10-04: the turn went dead behind it — the old
  * `length === 0` check saw the marker and refused to fire).
  */
+/** Fork: recent lesson text, newest first — assistant prose plus the
+ *  string arguments of tool calls (question stems, options, snippets) —
+ *  the source for dictation keyterms. */
+export function lessonTexts(messages: readonly { parts?: readonly unknown[] }[], limit = 30): string[] {
+	const out: string[] = [];
+	const strings = (value: unknown, depth = 0) => {
+		if (depth > 3 || out.length > 200) return;
+		if (typeof value === "string") out.push(value);
+		else if (Array.isArray(value)) for (const v of value) strings(v, depth + 1);
+		else if (value && typeof value === "object") for (const v of Object.values(value)) strings(v, depth + 1);
+	};
+	for (const m of messages.slice(-limit).reverse()) {
+		for (const part of m.parts ?? []) {
+			const p = part as { type?: string; text?: unknown; input?: unknown };
+			if (p.type === "text" && typeof p.text === "string") out.push(p.text);
+			else if (typeof p.type === "string" && p.type.startsWith("tool-")) strings(p.input);
+		}
+	}
+	return out;
+}
+
 export function initialPromptOwed(messages: readonly { role: string }[], prompt: string | undefined): boolean {
 	if (!prompt) return false;
 	return !messages.some((m) => m.role === "user" || m.role === "assistant");

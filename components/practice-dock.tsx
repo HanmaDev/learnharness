@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
+import { useDictationGhost } from "@/components/dictation-state";
 import { cn } from "@/lib/utils";
 
 /**
@@ -57,17 +58,17 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	// the tail, never a stale closure.
 	const thinkingRef = useRef("");
 
-	useDictationTarget(
-		useCallback(
-			(t: string) => {
-				const v = joinDictation(thinkingRef.current, t);
-				thinkingRef.current = v;
-				setThinking(v);
-			},
-			[],
-		),
-		true,
+	const dictationAppend = useCallback(
+		(t: string) => {
+			const v = joinDictation(thinkingRef.current, t);
+			thinkingRef.current = v;
+			setThinking(v);
+		},
+		[],
 	);
+	useDictationTarget(dictationAppend, true);
+	// Fork: the live (greyed) dictation words.
+	const dictationGhost = useDictationGhost(dictationAppend);
 
 	const submit = () => {
 		if (compactionRunning) return;
@@ -125,6 +126,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				</div>
 				<PathInput
 					value={thinking}
+					ghostText={dictationGhost}
 					onValueChange={(value) => {
 						thinkingRef.current = value;
 						setThinking(value);
