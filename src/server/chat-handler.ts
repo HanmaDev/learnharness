@@ -47,7 +47,7 @@ import { beginTurn, endTurn } from "./turn-liveness.ts";
 import { applyParkedDismissal } from "./dismissal-park.ts";
 import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.ts";
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
-import { hasProbeDone, hasUnresolvedQuestion, type LhMessage } from "../core/native-messages.ts";
+import { hasProbeDone, hasUnresolvedQuestion, hydratePhotos, type LhMessage } from "../core/native-messages.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
 import { ensureCompacted, kickCompaction, effectiveThresholdTokens } from "./compaction.ts";
 import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.ts";
@@ -374,7 +374,8 @@ export async function handleChatInput(
 	// tail to start continue(), so its temporary history omits the trailing
 	// failures only. Count that SAME temporary prefix at settlement, or the
 	// retained failures would make persistTurn skip genuinely new output.
-	const agentMessages = input.type === "retry" ? merged.filter((m) => !retryOmissions.has(m.id)) : merged;
+	// Fork: photo bytes join the AGENT's copy only (the record keeps ids).
+	const agentMessages = hydratePhotos(input.type === "retry" ? merged.filter((m) => !retryOmissions.has(m.id)) : merged, stores.chatStore.getChat(chatId)?.imageSnapshots);
 	const stagedAutomatic = isSubscriptionProvider(conversation.provider) && input.type === "steers";
 	let persistBaseCount = stagedAutomatic ? record.messages.length : agentMessages.length;
 	try {

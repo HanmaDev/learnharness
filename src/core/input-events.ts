@@ -235,12 +235,13 @@ function parsePhotoIds(value: unknown): string[] {
 	return [...new Set(value as string[])];
 }
 
-/** Resolve photo ids against the record's snapshots (server: bytes ride along). */
+/** Check photo ids against the record's snapshots. The record keeps IDS
+ *  only (the bytes live once, in imageSnapshots); hydratePhotos adds the
+ *  bytes to the agent's in-memory copy at turn start. */
 function resolvePhotos(record: { imageSnapshots?: Record<string, { mimeType: "image/png" | "image/jpeg"; data: string }> }, ids: readonly string[] | undefined): LearnerPhoto[] {
 	return (ids ?? []).map((snapshotId) => {
-		const snap = record.imageSnapshots?.[snapshotId];
-		if (!snap) throw new ChatInputError("an attached photo is no longer available — attach it again");
-		return { snapshotId, mimeType: snap.mimeType, data: snap.data };
+		if (!record.imageSnapshots?.[snapshotId]) throw new ChatInputError("an attached photo is no longer available — attach it again");
+		return { snapshotId };
 	});
 }
 
@@ -270,8 +271,8 @@ export function inputAppends(
 			if (!pending || pending.toolCallId !== input.toolCallId) {
 				throw new ChatInputError("answer input targets no pending question call");
 			}
-			const answerPhotos = Array.isArray(input.answer.images) ? resolvePhotos(record, parsePhotoIds(input.answer.images)) : [];
-			return [newAnswerResult(input.toolCallId, pending.tool, input.answer, answerPhotos)];
+			if (Array.isArray(input.answer.images)) resolvePhotos(record, parsePhotoIds(input.answer.images));
+			return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
 		}
 		case "interrupt": {
 			const waiting = danglingQuestionsOf(record.messages);

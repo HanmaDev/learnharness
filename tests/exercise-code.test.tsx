@@ -9,7 +9,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { after, describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { buildExerciseAnswer, exerciseInputProblems, gradeExercise, sqlIsOrdered, sqlResultsMatch, type ExerciseToolInput } from "../src/core/exercise.ts";
+import { execFileSync } from "node:child_process";
+import { buildExerciseAnswer, exerciseInputProblems, gradeExercise, sqlIsOrdered, sqlResultsMatch, sqlVerdict, type ExerciseToolInput } from "../src/core/exercise.ts";
 import { compactAnswerForModel } from "../src/core/question-core.ts";
 import { sqlExerciseProblems } from "../src/agent/tools/sql-validate.ts";
 import { teachExerciseToolFor } from "../src/agent/tools.ts";
@@ -39,9 +40,30 @@ describe("sql — result comparison", () => {
 		assert.equal(sqlResultsMatch({ columns: ["x"], rows: [[null]] }, { columns: ["x"], rows: [["NULL"]] }, false), false, "NULL is not the text NULL");
 	});
 
-	it("detects a top-level ORDER BY, ignoring strings and comments", () => {
+	it("detects a top-level ORDER BY, ignoring strings, comments, subqueries and windows", () => {
 		assert.equal(sqlIsOrdered("SELECT * FROM t ORDER BY a"), true);
 		assert.equal(sqlIsOrdered("SELECT 'order by' FROM t -- order by x"), false);
+		assert.equal(sqlIsOrdered("SELECT * FROM (SELECT a FROM t ORDER BY a) x"), false);
+		assert.equal(sqlIsOrdered("SELECT a, row_number() OVER (ORDER BY a) FROM t"), false);
+	});
+
+	it("ties: same rows in another order count when his query sorts too (flagged)", () => {
+		const ref = { columns: ["name"], rows: [["Ana"], ["Ivo"], ["Mia"]] };
+		const swapped = { columns: ["name"], rows: [["Ivo"], ["Ana"], ["Mia"]] };
+		assert.deepEqual(sqlVerdict(ref, swapped, "SELECT name FROM e ORDER BY dept", "SELECT name FROM e ORDER BY dept"), { matched: true, orderUnverified: true });
+		assert.deepEqual(sqlVerdict(ref, swapped, "SELECT name FROM e ORDER BY dept", "SELECT name FROM e"), { matched: false }, "no sort: wrong");
+		assert.deepEqual(sqlVerdict(ref, ref, "SELECT name FROM e ORDER BY dept", "x"), { matched: true });
+	});
+
+	it("the vendored engine loads in PLAIN Node (not just under tsx) as the packaged server does", () => {
+		const script = [
+			"const { createRequire } = require('node:module');",
+			"const path = require('node:path');",
+			"const req = createRequire(path.join(process.cwd(), 'public', 'vendor', 'noop.js'));",
+			"process.stdout.write(typeof req('./sql-wasm.cjs'));",
+		].join("\n");
+		const out = execFileSync(process.execPath, ["--input-type=commonjs", "-e", script], { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8", env: { ...process.env, NODE_OPTIONS: "" } });
+		assert.equal(out, "function");
 	});
 });
 

@@ -366,6 +366,35 @@ export interface LearnerPhoto {
 	data?: string;
 }
 
+/** Fork: the AGENT's copy of the history with photo bytes filled in from the
+ *  session's snapshots — practice-thinking markers get `data`, answer
+ *  results get image content blocks. Pure; the record itself keeps ids only
+ *  (persistTurn appends only the turn's new messages, never this copy). */
+export function hydratePhotos(
+	messages: readonly LhMessage[],
+	snapshots: Readonly<Record<string, { mimeType: "image/png" | "image/jpeg"; data: string }>> | undefined,
+): LhMessage[] {
+	if (!snapshots) return [...messages];
+	return messages.map((m) => {
+		if (m.role === "custom" && m.customType === "practice-thinking") {
+			const details = m.details as { images?: LearnerPhoto[] } | null;
+			if (!details?.images?.length) return m;
+			const images = details.images.map((i) => {
+				const snap = snapshots[i.snapshotId];
+				return snap ? { snapshotId: i.snapshotId, mimeType: snap.mimeType, data: snap.data } : i;
+			});
+			return { ...m, details: { ...details, images } };
+		}
+		if (m.role === "toolResult") {
+			const ids = (m.details as { images?: unknown } | null)?.images;
+			if (!Array.isArray(ids) || ids.length === 0 || m.content.some((c) => c.type === "image")) return m;
+			const blocks = photoContent(ids.filter((id): id is string => typeof id === "string").map((id) => ({ snapshotId: id, ...snapshots[id] })));
+			return blocks.length ? { ...m, content: [...m.content, ...blocks] } : m;
+		}
+		return m;
+	});
+}
+
 /** The image content blocks for the model (photos with bytes only). */
 export function photoContent(images: readonly LearnerPhoto[] | undefined): Array<{ type: "image"; data: string; mimeType: string }> {
 	return (images ?? []).filter((i) => typeof i.data === "string" && i.data.length > 0 && i.mimeType).map((i) => ({ type: "image" as const, data: i.data!, mimeType: i.mimeType! }));

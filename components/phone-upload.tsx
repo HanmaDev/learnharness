@@ -22,7 +22,11 @@ export function PhoneUploadDialog({ chatId, onClose, onPhoto }: { chatId: string
 		void (async () => {
 			const res = await fetch(base, { method: "POST" }).catch(() => null);
 			const body = (await res?.json().catch(() => null)) as { token?: string; url?: string; qrSvg?: string; expiresAt?: number; error?: string } | null;
-			if (stopped) return;
+			if (stopped) {
+				// Closed before the link arrived: shut the listener now.
+				if (body?.token) void fetch(`${base}?token=${body.token}`, { method: "DELETE" }).catch(() => {});
+				return;
+			}
 			if (!res?.ok || !body?.token) {
 				setError(body?.error ?? "Could not start the phone upload.");
 				return;

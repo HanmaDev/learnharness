@@ -24,8 +24,19 @@ async function libs() {
 
 /** LaTeX → a mathjs-friendly expression string. */
 export function asciiForMathjs(ascii: string): string {
+	const GROUP = String.raw`(\([^()]*\)|[a-z0-9.]+)`;
 	return wrapFractions(ascii)
+		// root(3)(x) → nthRoot(x, 3)
+		.replace(/root\(([^()]*)\)\(([^()]*)\)/g, "nthRoot($2, $1)")
+		// log _2 8 / log _2x / log _(b)(x) → log(arg, base)
+		.replace(new RegExp(String.raw`\blog\s*_\s*` + GROUP.replace("[a-z0-9.]+", "[0-9.]+|[a-z]") + String.raw`\s*` + GROUP, "gi"), "log($2, $1)")
+		// a bare "log" (LaTeX \log) is base 10, the school convention; ln is natural
+		.replace(/(?<![a-z])log(?=\s*\()(?!\([^()]*,)/gi, "log10")
 		.replace(/(?<![a-z])ln(?![a-z])/gi, "log") // natural log (also right after a digit: 2ln x)
+		// |x| → abs(x) (non-nested pairs)
+		.replace(/\|([^|]+)\|/g, "abs($1)")
+		// x(x+1): a lone variable before "(" multiplies (mathjs would read a call)
+		.replace(/(?<![a-z])([a-z])\s*\(/gi, "$1*(")
 		.replace(/·|⋅|×/g, "*")
 		.replace(/−/g, "-")
 		.replace(/(sin|cos|tan|cot|sec|csc|sinh|cosh|tanh|log|sqrt|exp|abs|arcsin|arccos|arctan)\s+\^\s*(\d+)\s*([a-z0-9.]+|\([^()]*\))/gi, "($1($3))^$2") // sin^2 x → (sin(x))^2
@@ -125,7 +136,12 @@ function compareOne(math: typeof import("mathjs"), toAscii: (l: string) => strin
 	} catch {
 		return "undecided";
 	}
-	const close = (x: number, y: number) => Math.abs(x - y) <= 1e-7 * Math.max(1, Math.abs(x), Math.abs(y));
+	// Relative tolerance (6.67e-11 vs 6.67e-10 must differ); an absolute
+	// floor only when one side is (numerically) zero.
+	const close = (x: number, y: number) => {
+		const scale = Math.max(Math.abs(x), Math.abs(y));
+		return scale < 1e-300 ? true : Math.abs(x - y) <= 1e-9 * scale || (Math.min(Math.abs(x), Math.abs(y)) === 0 && scale < 1e-14);
+	};
 	const num = (v: unknown): number | null => {
 		if (typeof v === "number") return Number.isFinite(v) ? v : null;
 		const c = v as { re?: number; im?: number } | null;

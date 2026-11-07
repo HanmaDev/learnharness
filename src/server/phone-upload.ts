@@ -49,11 +49,17 @@ export function lanAddress(): string | null {
 	return candidates.find(isPrivate) ?? null;
 }
 
+/** Uncollected photos are dropped after this long. */
+const COLLECT_MS = 2 * 60_000;
+
 function close(session: UploadSession, state: UploadSession["state"]): void {
 	clearTimeout(session.timer);
 	if (session.state === "waiting" || session.state === "received") session.state = state;
+	session.bytes = undefined;
 	session.server.close();
 	session.server.closeAllConnections?.();
+	// Review fix: never keep dead sessions (or their bytes) around.
+	if (state === "expired" || state === "failed") sessions.delete(session.token);
 }
 
 export function uploadPage(token: string): string {
@@ -76,6 +82,8 @@ s.textContent=r.ok?'✓ Sent! You can close this page.':'Could not send ('+r.sta
 
 /** Open a one-time upload for a chat; returns the URL + its QR as SVG. */
 export async function startPhoneUpload(chatId: string): Promise<{ token: string; url: string; qrSvg: string; expiresAt: number }> {
+	// One open phone link per chat: a new one closes the old.
+	for (const s of [...sessions.values()]) if (s.chatId === chatId && s.state === "waiting") close(s, "expired");
 	const host = lanAddress();
 	if (!host) throw new Error("No Wi-Fi/LAN connection found — connect this computer to the same network as your phone.");
 	const token = randomBytes(16).toString("hex");
@@ -119,9 +127,11 @@ export async function startPhoneUpload(chatId: string): Promise<{ token: string;
 			session.bytes = new Uint8Array(Buffer.concat(chunks));
 			session.state = "received";
 			res.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
-			// One image only: stop listening right away.
+			// One image only: stop listening right away; the app has a little
+			// while to collect it, then the bytes are dropped.
 			clearTimeout(session.timer);
 			server.close();
+			session.timer = setTimeout(() => close(session, "expired"), COLLECT_MS);
 		});
 	});
 	await new Promise<void>((resolve, reject) => {
@@ -146,6 +156,7 @@ export async function phoneUploadStatus(token: string, chatId: string): Promise<
 	if (session.state === "received" && session.bytes) {
 		const bytes = session.bytes;
 		session.bytes = undefined;
+		clearTimeout(session.timer);
 		try {
 			const image = await normalizeImageBytes(bytes);
 			chatStore.saveImageSnapshot(chatId, image.snapshotId, image);

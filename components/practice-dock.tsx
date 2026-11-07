@@ -128,11 +128,16 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 				const verdict = await mathEquivalent(input.finalAnswerLatex, final);
 				finalLine = `\nFinal answer: $${final}$ — app check: ${verdict === "equal" ? "EQUAL to the committed answer" : verdict === "different" ? "DIFFERENT from the committed answer" : "could not decide (judge it yourself)"}`;
 			}
-			thinkingRef.current = "";
-			setThinking("");
-			finalRef.current = "";
-			setFinalAnswer("");
-			photos.clear();
+			// Clear only what was sent — anything typed during the check stays.
+			if (thinkingRef.current.trim() === text) {
+				thinkingRef.current = "";
+				setThinking("");
+			}
+			if (finalRef.current.trim() === final) {
+				finalRef.current = "";
+				setFinalAnswer("");
+			}
+			for (const id of images) photos.remove(id);
 			// Fork: tag the part and the elapsed time so the teacher can grade
 			// per part and report time.
 			const tags = [parts ? `(${parts[partIdx]!.label})` : "", `[elapsed ${formatClock(Date.now() - startRef.current)}]`].filter(Boolean).join(" ");

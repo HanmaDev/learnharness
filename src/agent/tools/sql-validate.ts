@@ -25,7 +25,10 @@ function loadEngine(): Promise<SqlJs> {
 	engine = (async () => {
 		const dir = vendorDir();
 		const req = createRequire(path.join(dir, "noop.js"));
-		const init = req("./sql-wasm.js") as (cfg: { wasmBinary: Uint8Array }) => Promise<SqlJs>;
+		// .cjs: the app's package.json is "type": "module", so a .js copy would
+		// load as an ES module with no exports (the browser uses sql-wasm.js).
+		const init = req("./sql-wasm.cjs") as (cfg: { wasmBinary: Uint8Array }) => Promise<SqlJs>;
+		if (typeof init !== "function") throw new Error("sql.js did not load as a function");
 		return init({ wasmBinary: new Uint8Array(fs.readFileSync(path.join(dir, "sql-wasm.wasm"))) });
 	})().catch((err) => {
 		engine = null;
@@ -39,8 +42,10 @@ export async function sqlExerciseProblems(setupSql: string, referenceSql: string
 	let SQL: SqlJs;
 	try {
 		SQL = await loadEngine();
-	} catch {
-		return []; // no engine here (tests without vendor files): the client still grades
+	} catch (err) {
+		// Fail LOUDLY: an unchecked reference could grade him against an error.
+		console.error("[sql-validate] SQL engine unavailable:", err);
+		return ["The SQL checker is unavailable right now — pose this as a different exercise format."];
 	}
 	const db = new SQL.Database();
 	try {

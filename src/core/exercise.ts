@@ -216,7 +216,7 @@ export type ExerciseResponse =
 	/** For each left index: the pair index whose right side he chose (-1 = none). */
 	| { format: "match"; picks: number[] }
 	/** His query and what it returned (graded client-side by running both). */
-	| { format: "sql"; query: string; matched: boolean; columns: string[]; rows: SqlCell[][]; error?: string; expectedRows?: number }
+	| { format: "sql"; query: string; matched: boolean; columns: string[]; rows: SqlCell[][]; error?: string; expectedRows?: number; orderUnverified?: boolean }
 	/** His markup; the teacher grades it. */
 	| { format: "html"; code: string }
 	/** His formula (LaTeX) and the app's equivalence verdict. */
@@ -247,7 +247,29 @@ export function sqlResultsMatch(
 
 /** Does the reference query impose an order? (top-level ORDER BY) */
 export function sqlIsOrdered(referenceSql: string): boolean {
-	return /\border\s+by\b/i.test(referenceSql.replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*/g, ""));
+	// Only a TOP-LEVEL ORDER BY orders the result: strip strings, comments,
+	// then every parenthesized group (subqueries, OVER (...), group_concat).
+	let s = referenceSql.replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+	for (let prev = ""; prev !== s; ) {
+		prev = s;
+		s = s.replace(/\([^()]*\)/g, " ");
+	}
+	return /\border\s+by\b/i.test(s);
+}
+
+/** SQL grading verdict: exact match, or (when the reference sorts) the same
+ *  rows in a different order from a query that ALSO sorts — ties may
+ *  legitimately order differently, so that counts, flagged for the teacher. */
+export function sqlVerdict(
+	reference: { columns: string[]; rows: SqlCell[][] },
+	got: { columns: string[]; rows: SqlCell[][] },
+	referenceSql: string,
+	query: string,
+): { matched: boolean; orderUnverified?: boolean } {
+	const ordered = sqlIsOrdered(referenceSql);
+	if (sqlResultsMatch(reference, got, ordered)) return { matched: true };
+	if (ordered && sqlIsOrdered(query) && sqlResultsMatch(reference, got, false)) return { matched: true, orderUnverified: true };
+	return { matched: false };
 }
 
 export interface ExerciseResult {
@@ -340,6 +362,7 @@ export function exerciseResultForModel(input: ExerciseToolInput | undefined, res
 					out.rowsPreview = response.rows.slice(0, 8);
 				}
 				if (response.expectedRows !== undefined) out.expectedRowCount = response.expectedRows;
+				if (response.orderUnverified) out.note = "Same rows as the reference but in a different order; his query sorts too — check that he sorts by the right key (ties may differ legitimately).";
 			}
 			break;
 		case "html":

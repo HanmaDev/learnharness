@@ -12,7 +12,7 @@ import { after, describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createCanvas } from "@napi-rs/canvas";
 import { inputAppends, parseChatInput, ChatInputError } from "../src/core/input-events.ts";
-import { newThinkingMessage, toLlmMessages, type LhMessage } from "../src/core/native-messages.ts";
+import { hydratePhotos, newThinkingMessage, toLlmMessages, type LhMessage } from "../src/core/native-messages.ts";
 import { compactAnswerForModel } from "../src/core/question-core.ts";
 import { normalizeImageBytes } from "../src/agent/tools/learner-image.ts";
 import { lanAddress, phoneUploadStatus, startPhoneUpload, cancelPhoneUpload, uploadPage } from "../src/server/phone-upload.ts";
@@ -47,13 +47,13 @@ describe("photos — record and model path", () => {
 		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p", text: "", images: [] }), ChatInputError, "nothing to submit");
 	});
 
-	it("the server copy carries the bytes; the model receives them as an image", () => {
+	it("the record keeps ids only; the agent's hydrated copy sends the image to the model", () => {
 		const record = { messages: [problemCall("p1"), problemAck("p1")], imageSnapshots: { [ID]: snap } };
 		const [marker] = inputAppends(record, { type: "thinking", problemCallId: "p1", text: "my work", images: [ID] });
 		const details = (marker as { details: { images: Array<{ snapshotId: string; data?: string }> } }).details;
-		assert.equal(details.images[0]!.snapshotId, ID);
-		assert.equal(details.images[0]!.data, snap.data);
-		const wire = toLlmMessages([marker] as never) as Array<{ content: Array<{ type: string; data?: string }> }>;
+		assert.deepEqual(details.images, [{ snapshotId: ID }], "no bytes in the record (review fix)");
+		const [hydrated] = hydratePhotos([marker!], record.imageSnapshots);
+		const wire = toLlmMessages([hydrated] as never) as Array<{ content: Array<{ type: string; data?: string }> }>;
 		assert.ok(wire.at(-1)!.content.some((c) => c.type === "image" && c.data === snap.data), "image content on the wire");
 		assert.match(JSON.stringify(wire), /1 photo of handwritten work attached/);
 	});
@@ -63,14 +63,17 @@ describe("photos — record and model path", () => {
 		assert.throws(() => inputAppends(record, { type: "thinking", problemCallId: "p1", text: "x", images: [ID] }), /attach it again/);
 	});
 
-	it("answer photos ride the tool result as image content and are counted for the model", () => {
+	it("answer photos: ids in the record, image content only in the hydrated agent copy", () => {
 		const quiz = {
 			id: "a_q", role: "assistant", stopReason: "toolUse", timestamp: 1,
 			content: [{ type: "toolCall", id: "q", name: "ask_user_question", arguments: { question: "Show your work" } }],
 		} as unknown as LhMessage;
 		const answer = { kind: "ask" as const, questionText: "Show your work", dontKnow: false, answers: [], text: "see photo", images: [ID], answeredAt: "t" };
 		const [result] = inputAppends({ messages: [quiz], imageSnapshots: { [ID]: snap } }, { type: "answer", toolCallId: "q", answer });
-		const content = (result as { content: Array<{ type: string; text?: string }> }).content;
+		const stored = (result as { content: Array<{ type: string; text?: string }> }).content;
+		assert.ok(!stored.some((c) => c.type === "image"), "no bytes in the record");
+		const [hydrated] = hydratePhotos([result!], { [ID]: snap });
+		const content = (hydrated as { content: Array<{ type: string; text?: string }> }).content;
 		assert.ok(content.some((c) => c.type === "image"));
 		assert.equal(JSON.parse(content[0]!.text!).photosAttached, 1);
 		assert.equal(compactAnswerForModel(answer).photosAttached, 1);

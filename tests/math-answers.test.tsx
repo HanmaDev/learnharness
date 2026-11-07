@@ -34,6 +34,16 @@ describe("math equivalence", () => {
 		[r`3\sqrt{2}`, r`\sqrt{18}`, "equal"],
 		[r`\pi`, r`3.14`, "different"],
 		[r`x>2`, r`x>2`, "undecided"],
+		// review fixes: relative tolerance, logs with a base, |x|, roots, x(x+1), log = log10
+		[r`6.67\times10^{-11}`, r`0`, "different"],
+		[r`6.67\times10^{-11}`, r`6.67\times10^{-10}`, "different"],
+		[r`6.67\times10^{-11}`, r`6.67\cdot10^{-11}`, "equal"],
+		[r`3`, r`\log_{2}8`, "equal"],
+		[r`4`, r`\log_{2}8`, "different"],
+		[r`\left|x\right|`, r`\sqrt{x^2}`, "equal"],
+		[r`\sqrt[3]{8}`, r`2`, "equal"],
+		[r`x(x+1)`, r`x^2+x`, "equal"],
+		[r`2`, r`\log(100)`, "equal"],
 	];
 	for (const [answer, given, want] of cases) {
 		it(`${given} vs ${answer} → ${want}`, async () => {

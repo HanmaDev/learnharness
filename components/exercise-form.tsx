@@ -27,7 +27,7 @@ import { mathEquivalent } from "@/components/math-check";
 import { describeSchema, runSql, type SqlRun } from "@/components/sql-runner";
 import { buildDemoSrcDoc, INITIAL_DEMO_BRIDGE_STATE, reduceDemoBridgeState, type DemoBridgeState } from "@/components/artifacts/demo-card";
 import { htmlPreviewDocument } from "@/components/artifacts/html-preview-card";
-import { sqlIsOrdered, sqlResultsMatch, type SqlCell } from "@/src/core";
+import { sqlVerdict, type SqlCell } from "@/src/core";
 
 /**
  * Fork (2026-11-07): the `exercise` question's form — blanks, order,
@@ -301,8 +301,8 @@ async function gradeSqlResponse(input: ExerciseToolInput, query: string): Promis
 	const setup = input.setupSql ?? "";
 	const [got, ref] = await Promise.all([runSql(setup, query), runSql(setup, input.referenceSql ?? "")]);
 	if (!got.ok) return { format: "sql", query, matched: false, columns: [], rows: [], error: got.error, expectedRows: ref.ok ? ref.rows.length : undefined };
-	const matched = ref.ok && sqlResultsMatch(ref, got, sqlIsOrdered(input.referenceSql ?? ""));
-	return { format: "sql", query, matched, columns: got.columns, rows: got.rows.slice(0, MAX_SHOWN_ROWS), expectedRows: ref.ok ? ref.rows.length : undefined };
+	const verdict = ref.ok ? sqlVerdict(ref, got, input.referenceSql ?? "", query) : { matched: false };
+	return { format: "sql", query, ...verdict, columns: got.columns, rows: got.rows.slice(0, MAX_SHOWN_ROWS), expectedRows: ref.ok ? ref.rows.length : undefined };
 }
 
 function initialResponse(input: ExerciseToolInput, seed: string): ExerciseResponse | null {
@@ -793,7 +793,7 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 			{input.format === "math" && response.format === "math" && (
 				<div className="flex flex-col gap-1.5">
 					<div className="flex items-center gap-2">
-						<Mark ok={result.correct} />
+						{response.verdict !== "undecided" && <Mark ok={result.correct} />}
 						<ToolContentResponse>{`$${response.latex}$`}</ToolContentResponse>
 					</div>
 					{response.verdict === "undecided" && <div className="text-xs text-muted-foreground">The app couldn't decide — the teacher checks this one.</div>}
