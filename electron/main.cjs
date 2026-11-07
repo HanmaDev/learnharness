@@ -32,6 +32,7 @@ const { createSubscriptions, loadSubscriptionSDK } = require("./subscriptions.cj
 const { attachSubscriptionChild, subscriptionControl } = require("./subscription-ipc.cjs");
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
+const { backupNow, restoreIfEmpty } = require("./data-backup.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -54,6 +55,17 @@ const PRODUCT_NAME = "LearnHarness";
 app.setName(PRODUCT_NAME);
 const AUTH_FILE = () => path.join(app.getPath("userData"), "auth.json");
 const DATA_DIR = () => path.join(app.getPath("userData"), "data");
+/** Automatic snapshots live OUTSIDE userData (fork, 2026-11-07). */
+const BACKUP_DIR = () => process.env.LH_BACKUP_DIR || path.join(app.getPath("documents"), "LearnHarness-rezervne-kopije");
+const BACKUP_EVERY_MS = 10 * 60_000;
+function safeBackup(reason) {
+	try {
+		const dir = backupNow({ dataDir: DATA_DIR(), authFile: AUTH_FILE(), root: BACKUP_DIR() });
+		if (dir) log(`backup (${reason}): ${dir}`);
+	} catch (err) {
+		log(`backup (${reason}) FAILED: ${err && err.stack ? err.stack : err}`);
+	}
+}
 
 /** The packaged standalone server (extraResources → Resources/server).
  *  In dev LH_DEV_URL short-circuits everything: no spawn, no packaging —
@@ -677,6 +689,16 @@ async function main() {
 			},
 		});
 		await subscriptions.ready;
+		// Data safety first: restore an emptied data dir, then snapshot.
+		try {
+			const restored = restoreIfEmpty({ dataDir: DATA_DIR(), authFile: AUTH_FILE(), root: BACKUP_DIR() });
+			if (restored) log(`data dir had no chats — RESTORED from ${restored}`);
+		} catch (err) {
+			log(`restore check FAILED: ${err && err.stack ? err.stack : err}`);
+		}
+		safeBackup("start");
+		setInterval(() => safeBackup("periodic"), BACKUP_EVERY_MS).unref();
+		app.on("before-quit", () => safeBackup("quit"));
 		log(`starting server: ${serverEntry()}`);
 		log(`data dir: ${DATA_DIR()}${fs.existsSync(AUTH_FILE()) ? " · auth.json: present" : " · auth.json: ABSENT (no BYOK keys yet)"}`);
 		await startServer(new URL(url).port);
