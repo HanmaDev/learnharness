@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { exerciseInputObject, exerciseInputProblems } from "../core/exercise.ts";
+import { sqlExerciseProblems } from "./tools/sql-validate.ts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { invalidInputResult, questionResult, serverExecute } from "./tool-execute.ts";
 import {
@@ -404,6 +405,9 @@ export function teachExerciseToolFor(ctx: Pick<PlanToolContext, "chatId" | "chat
 			"{{1}} {{2}} in code/text — `template` + one `blanks` entry per gap with every accepted answer), order (`steps` " +
 			"in the CORRECT order; the learner sees them shuffled and reorders), find-mistake (numbered `lines` + the one " +
 			"wrong `mistakeLine`; he clicks it and says why in his thinking), or match (`pairs`; right sides shuffled). " +
+			"Or sql (a real SQLite sandbox: `setupSql` builds the tables, `referenceSql` is your correct query — he writes, runs, " +
+			"and submits a query; graded by comparing result rows) or html (`starterCode` optional; he edits HTML/CSS with a " +
+			"live preview and submits; YOU grade his code in your reply). " +
 			"Set `language` when the content is code. The app grades instantly and returns an itemized result; " +
 			"`explanation` is revealed afterwards. Every call declares `type` (predict/check) and `nodeId` (validated " +
 			"against the plan map), like quiz. ONE question per turn: call a single exercise, then end your turn.",
@@ -414,6 +418,10 @@ export function teachExerciseToolFor(ctx: Pick<PlanToolContext, "chatId" | "chat
 			const problems = [...exerciseInputProblems(input)];
 			const nodeIdProblemText = nodeIdProblem(ctx, input.nodeId);
 			if (nodeIdProblemText) problems.push(nodeIdProblemText);
+			// SQL exercises: the database must build and the reference must run.
+			if (problems.length === 0 && input.format === "sql") {
+				problems.push(...(await sqlExerciseProblems(input.setupSql ?? "", input.referenceSql ?? "")));
+			}
 			if (problems.length > 0) return invalidInputResult("exercise", problems);
 			return questionResult();
 		},

@@ -89,6 +89,9 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 				{isQuiz &&
 					(answer.dontKnow ? (
 						<span className="rounded bg-muted px-1.5 py-0.5">didn't know</span>
+					) : isExercise && answer.correct === undefined ? (
+						// Fork: teacher-graded exercise formats (html) carry no app verdict.
+						<span className="rounded bg-muted px-1.5 py-0.5">submitted</span>
 					) : answer.correct ? (
 						<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">correct</span>
 					) : (

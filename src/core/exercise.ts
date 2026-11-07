@@ -17,7 +17,7 @@
 import { Type, type Static } from "typebox";
 import type { QuestionAnswerData, QuizQuestionType } from "./question-core.ts";
 
-export const EXERCISE_FORMATS = ["blanks", "order", "find-mistake", "match"] as const;
+export const EXERCISE_FORMATS = ["blanks", "order", "find-mistake", "match", "sql", "html"] as const;
 export type ExerciseFormat = (typeof EXERCISE_FORMATS)[number];
 
 const MD = " Renders markdown and LaTeX.";
@@ -29,10 +29,12 @@ export const exerciseInputObject = Type.Object({
 			"check = after the step's teaching (arrives behind the Check your understanding reveal).",
 	}),
 	nodeId: Type.String({ description: "REQUIRED plan node id (exactly one of this session's plan_init slugs)." }),
-	format: Type.Union([Type.Literal("blanks"), Type.Literal("order"), Type.Literal("find-mistake"), Type.Literal("match")], {
+	format: Type.Union([Type.Literal("blanks"), Type.Literal("order"), Type.Literal("find-mistake"), Type.Literal("match"), Type.Literal("sql"), Type.Literal("html")], {
 		description:
 			"REQUIRED — blanks (fill gaps in `template`), order (`steps` in the correct order; shown shuffled), " +
-			"find-mistake (`lines` + the 1-based `mistakeLine`), match (`pairs`; right sides shown shuffled).",
+			"find-mistake (`lines` + the 1-based `mistakeLine`), match (`pairs`; right sides shown shuffled), " +
+			"sql (he writes a query against `setupSql`; graded against `referenceSql`'s result), " +
+			"html (he writes/edits HTML+CSS with a live preview; YOU grade it from his code).",
 	}),
 	question: Type.String({ description: "The instruction/question shown above the exercise." + MD }),
 	details: Type.Optional(Type.String({ description: "Optional extra context shown under the question." + MD })),
@@ -67,6 +69,21 @@ export const exerciseInputObject = Type.Object({
 			Type.Object({ left: Type.String(), right: Type.String() }),
 			{ minItems: 3, maxItems: 10, description: "match only: the correct pairs (3–10); right sides are shuffled for the learner." },
 		),
+	),
+	setupSql: Type.Optional(
+		Type.String({
+			description:
+				"sql only: SQLite statements that build the practice database (CREATE TABLE + INSERT rows). Small: 1–4 tables, ≤ 30 rows each. Shown to him as the schema.",
+		}),
+	),
+	referenceSql: Type.Optional(
+		Type.String({
+			description:
+				"sql only: YOUR correct query. His query is right when it returns the same rows and columns (column names may differ; row order matters only if yours has ORDER BY). Validated before he sees the exercise.",
+		}),
+	),
+	starterCode: Type.Optional(
+		Type.String({ description: "sql/html only: code pre-filled in his editor (e.g. a half-written query, or markup to fix). Omit to start empty." }),
 	),
 	explanation: Type.String({
 		description:
@@ -110,6 +127,12 @@ export function exerciseInputProblems(input: ExerciseToolInput): string[] {
 			else if (input.lines && (input.mistakeLine < 1 || input.mistakeLine > input.lines.length)) {
 				problems.push(`mistakeLine ${input.mistakeLine} is outside 1..${input.lines.length}.`);
 			}
+			break;
+		case "sql":
+			if (!input.setupSql?.trim()) problems.push("sql needs `setupSql` (CREATE TABLE + INSERT statements).");
+			if (!input.referenceSql?.trim()) problems.push("sql needs `referenceSql` (your correct query).");
+			break;
+		case "html":
 			break;
 		case "match":
 			if (!input.pairs || input.pairs.length < 3) problems.push("match needs `pairs` (3–10).");
@@ -180,9 +203,43 @@ export type ExerciseResponse =
 	/** 1-based line number. */
 	| { format: "find-mistake"; line: number }
 	/** For each left index: the pair index whose right side he chose (-1 = none). */
-	| { format: "match"; picks: number[] };
+	| { format: "match"; picks: number[] }
+	/** His query and what it returned (graded client-side by running both). */
+	| { format: "sql"; query: string; matched: boolean; columns: string[]; rows: SqlCell[][]; error?: string; expectedRows?: number }
+	/** His markup; the teacher grades it. */
+	| { format: "html"; code: string };
+
+export type SqlCell = string | number | null;
+
+/** The SQL result-set comparison (pure): same column count and the same
+ *  rows; order matters only when the reference sorts. Cells compare by
+ *  value — numbers numerically (1 = 1.0), text trimmed, NULL as NULL. */
+export function sqlResultsMatch(
+	reference: { columns: string[]; rows: SqlCell[][] },
+	got: { columns: string[]; rows: SqlCell[][] },
+	ordered: boolean,
+): boolean {
+	if (reference.columns.length !== got.columns.length) return false;
+	if (reference.rows.length !== got.rows.length) return false;
+	const cell = (v: SqlCell): string => (v === null ? "\u0000NULL" : typeof v === "number" ? `n:${Number(v.toPrecision(12))}` : `s:${String(v).trim()}`);
+	const key = (row: SqlCell[]) => JSON.stringify(row.map(cell));
+	const a = reference.rows.map(key);
+	const b = got.rows.map(key);
+	if (!ordered) {
+		a.sort();
+		b.sort();
+	}
+	return a.every((k, i) => k === b[i]);
+}
+
+/** Does the reference query impose an order? (top-level ORDER BY) */
+export function sqlIsOrdered(referenceSql: string): boolean {
+	return /\border\s+by\b/i.test(referenceSql.replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*/g, ""));
+}
 
 export interface ExerciseResult {
+	/** Fork: false for formats the TEACHER grades (html) — no verdict chip. */
+	graded?: boolean;
 	correct: boolean;
 	/** 0..1 — the share of items right. */
 	score: number;
@@ -219,6 +276,11 @@ export function gradeExercise(input: ExerciseToolInput, response: ExerciseRespon
 			items = (input.pairs ?? []).map((_, i) => picks[i] === i);
 			break;
 		}
+		case "sql":
+			items = [response.format === "sql" && response.matched && !response.error];
+			break;
+		case "html":
+			return { graded: false, correct: false, score: 0, items: [] };
 	}
 	const right = items.filter(Boolean).length;
 	return { correct: items.length > 0 && right === items.length, score: items.length ? right / items.length : 0, items };
@@ -251,6 +313,27 @@ export function exerciseResultForModel(input: ExerciseToolInput | undefined, res
 				if (!result.correct) out.mistakeLine = input.mistakeLine;
 			}
 			break;
+		case "sql":
+			if (response.format === "sql") {
+				out.query = response.query;
+				if (response.error) out.error = response.error;
+				else {
+					out.rowCount = response.rows.length;
+					out.columns = response.columns;
+					out.rowsPreview = response.rows.slice(0, 8);
+				}
+				if (response.expectedRows !== undefined) out.expectedRowCount = response.expectedRows;
+			}
+			break;
+		case "html":
+			if (response.format === "html") {
+				delete out.correct;
+				delete out.score;
+				out.graded = false;
+				out.code = response.code.length > 12000 ? `${response.code.slice(0, 12000)}\n…(truncated)` : response.code;
+				out.note = "Grade this markup yourself against what you asked for; he has seen its live preview.";
+			}
+			break;
 		case "match":
 			if (response.format === "match") {
 				out.pairs = (input.pairs ?? []).map((p, i) => ({
@@ -276,6 +359,10 @@ export function exerciseResponseComplete(input: ExerciseToolInput, response: Exe
 			return response.line >= 1;
 		case "match":
 			return (input.pairs ?? []).every((_, i) => (response.picks[i] ?? -1) >= 0);
+		case "sql":
+			return response.query.trim().length > 0;
+		case "html":
+			return response.code.trim().length > 0;
 	}
 }
 
@@ -315,7 +402,8 @@ export function buildExerciseAnswer(
 	}
 	const response = req.response!;
 	const result = gradeExercise(input, response);
-	base.correct = result.correct;
+	// Teacher-graded formats carry no app verdict.
+	base.correct = result.graded === false ? undefined : result.correct;
 	base.exercise = { format: input.format, response, result, summary: exerciseResultForModel(input, response, result) };
 	if (req.confidence !== undefined) base.confidence = Math.max(0, Math.min(100, Math.round(req.confidence)));
 	return base;

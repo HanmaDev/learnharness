@@ -2,7 +2,7 @@
 
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { CodeIcon, EyeIcon, RotateCwIcon } from "lucide-react";
-import { ChatActionsContext } from "@/components/chat";
+import { ChatActionsContext } from "@/components/chat-actions-context";
 import { MessageResponse } from "@/components/ai-elements/message";
 import {
 	buildDemoSrcDoc,

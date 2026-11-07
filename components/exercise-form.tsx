@@ -21,6 +21,11 @@ import {
 } from "@/src/core";
 import { cn } from "@/lib/utils";
 import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
+import { CodeEditor } from "@/components/code-editor";
+import { describeSchema, runSql, type SqlRun } from "@/components/sql-runner";
+import { buildDemoSrcDoc, INITIAL_DEMO_BRIDGE_STATE, reduceDemoBridgeState, type DemoBridgeState } from "@/components/artifacts/demo-card";
+import { htmlPreviewDocument } from "@/components/artifacts/html-preview-card";
+import { sqlIsOrdered, sqlResultsMatch, type SqlCell } from "@/src/core";
 
 /**
  * Fork (2026-11-07): the `exercise` question's form — blanks, order,
@@ -108,9 +113,11 @@ export function ExerciseForm({
 		submittingRef.current = true;
 		try {
 			if (isDictationActive()) await finishDictation();
+			let finalResponse = dontKnow ? null : response;
+			if (finalResponse?.format === "sql") finalResponse = await gradeSqlResponse(input, finalResponse.query);
 			const answer = buildExerciseAnswer(
 				input,
-				{ response: dontKnow ? null : response, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
+				{ response: finalResponse, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
 				toolName,
 			);
 			if (photos.ids.length) answer.images = photos.ids;
@@ -142,6 +149,12 @@ export function ExerciseForm({
 				)}
 				{input.format === "match" && response?.format === "match" && (
 					<MatchField input={input} toolCallId={toolCallId} picks={response.picks} onChange={(picks) => setResponse({ format: "match", picks })} />
+				)}
+				{input.format === "sql" && response?.format === "sql" && (
+					<SqlField input={input} query={response.query} onChange={(query) => setResponse({ format: "sql", query, matched: false, columns: [], rows: [] })} />
+				)}
+				{input.format === "html" && response?.format === "html" && (
+					<HtmlField code={response.code} onChange={(code) => setResponse({ format: "html", code })} />
 				)}
 			</div>
 			<div className="flex items-center gap-3 border-t border-border/60 px-4 py-2">
@@ -252,13 +265,28 @@ const FORMAT_LABEL: Record<ExerciseToolInput["format"], string> = {
 	order: "put in order",
 	"find-mistake": "find the mistake",
 	match: "match pairs",
+	sql: "write the query",
+	html: "write the markup",
 };
 const HINT: Record<ExerciseToolInput["format"], string> = {
 	blanks: "Fill every gap (Tab moves to the next).",
 	order: "Drag the steps, or use the arrows (Alt+↑/↓ on a focused step).",
 	"find-mistake": "Click the line that's wrong.",
 	match: "Click a left item, then its partner on the right.",
+	sql: "Write a query; Ctrl+Enter runs it. Submit when the result looks right.",
+	html: "Edit the markup; the preview updates as you type.",
 };
+
+const MAX_SHOWN_ROWS = 50;
+
+/** Run his query and the reference against fresh copies of the database and compare. */
+async function gradeSqlResponse(input: ExerciseToolInput, query: string): Promise<ExerciseResponse> {
+	const setup = input.setupSql ?? "";
+	const [got, ref] = await Promise.all([runSql(setup, query), runSql(setup, input.referenceSql ?? "")]);
+	if (!got.ok) return { format: "sql", query, matched: false, columns: [], rows: [], error: got.error, expectedRows: ref.ok ? ref.rows.length : undefined };
+	const matched = ref.ok && sqlResultsMatch(ref, got, sqlIsOrdered(input.referenceSql ?? ""));
+	return { format: "sql", query, matched, columns: got.columns, rows: got.rows.slice(0, MAX_SHOWN_ROWS), expectedRows: ref.ok ? ref.rows.length : undefined };
+}
 
 function initialResponse(input: ExerciseToolInput, seed: string): ExerciseResponse | null {
 	switch (input.format) {
@@ -270,6 +298,10 @@ function initialResponse(input: ExerciseToolInput, seed: string): ExerciseRespon
 			return { format: "find-mistake", line: 0 };
 		case "match":
 			return { format: "match", picks: (input.pairs ?? []).map(() => -1) };
+		case "sql":
+			return { format: "sql", query: input.starterCode ?? "", matched: false, columns: [], rows: [] };
+		case "html":
+			return { format: "html", code: input.starterCode ?? "" };
 		default:
 			return null;
 	}
@@ -465,6 +497,131 @@ function MatchField({ input, toolCallId, picks, onChange }: { input: ExerciseToo
 	);
 }
 
+// ─── sql ────────────────────────────────────────────────────────────────────
+
+export function ResultTable({ columns, rows, testId }: { columns: string[]; rows: SqlCell[][]; testId?: string }) {
+	if (columns.length === 0) return <div className="text-xs text-muted-foreground">(no rows)</div>;
+	return (
+		<div className="max-h-64 overflow-auto rounded-lg border" data-testid={testId}>
+			<table className="w-full border-collapse font-mono text-xs">
+				<thead className="sticky top-0 bg-card">
+					<tr>{columns.map((c, i) => <th key={i} className="border-b px-2 py-1 text-left font-medium">{c}</th>)}</tr>
+				</thead>
+				<tbody>
+					{rows.map((r, i) => (
+						<tr key={i} className="odd:bg-muted/30">
+							{r.map((v, j) => <td key={j} className="border-b border-border/40 px-2 py-0.5">{v === null ? <span className="text-muted-foreground">NULL</span> : String(v)}</td>)}
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
+function SqlField({ input, query, onChange }: { input: ExerciseToolInput; query: string; onChange: (q: string) => void }) {
+	const [run, setRun] = useState<SqlRun | null>(null);
+	const [running, setRunning] = useState(false);
+	const [schema, setSchema] = useState<Array<{ table: string; columns: string[]; rows: number }>>([]);
+	const [showSetup, setShowSetup] = useState(false);
+	useEffect(() => {
+		let live = true;
+		void describeSchema(input.setupSql ?? "").then((s) => live && setSchema(s)).catch(() => {});
+		return () => { live = false; };
+	}, [input.setupSql]);
+	const execute = async () => {
+		if (!query.trim()) return;
+		setRunning(true);
+		try {
+			setRun(await runSql(input.setupSql ?? "", query));
+		} catch (err) {
+			setRun({ ok: false, error: (err as Error).message });
+		} finally {
+			setRunning(false);
+		}
+	};
+	return (
+		<div data-testid="exercise-sql" className="flex flex-col gap-2">
+			<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+				<span className="font-medium uppercase tracking-wide">Database</span>
+				{schema.map((t) => (
+					<span key={t.table} className="font-mono">
+						<span className="text-foreground">{t.table}</span>({t.columns.join(", ")}) · {t.rows} rows
+					</span>
+				))}
+				<button type="button" onClick={() => setShowSetup((v) => !v)} className="underline-offset-2 hover:underline">
+					{showSetup ? "hide setup" : "show setup"}
+				</button>
+			</div>
+			{showSetup && <pre className="max-h-40 overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap">{input.setupSql}</pre>}
+			<CodeEditor language="sql" value={query} onChange={onChange} onRun={() => void execute()} ariaLabel="Your SQL query" testId="exercise-sql-editor" />
+			<div className="flex items-center gap-2">
+				<button
+					type="button"
+					data-testid="exercise-sql-run"
+					disabled={running || !query.trim()}
+					onClick={() => void execute()}
+					className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-40"
+				>
+					{running ? "Running…" : "Run ▸"}
+				</button>
+				<span className="text-xs text-muted-foreground">Ctrl+Enter · runs on a fresh copy of the database each time</span>
+			</div>
+			{run && (run.ok ? (
+				<div>
+					<ResultTable columns={run.columns} rows={run.rows.slice(0, MAX_SHOWN_ROWS)} testId="exercise-sql-result" />
+					<div className="mt-1 text-xs text-muted-foreground">{run.rows.length} row{run.rows.length === 1 ? "" : "s"}{run.truncated || run.rows.length > MAX_SHOWN_ROWS ? " (showing the first 50)" : ""}</div>
+				</div>
+			) : (
+				<div data-testid="exercise-sql-error" className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs text-red-500">{run.error}</div>
+			))}
+		</div>
+	);
+}
+
+// ─── html ───────────────────────────────────────────────────────────────────
+
+export function LivePreview({ code, minHeight = 120 }: { code: string; minHeight?: number }) {
+	const ref = useRef<HTMLIFrameElement>(null);
+	const [state, setState] = useState<DemoBridgeState>(INITIAL_DEMO_BRIDGE_STATE);
+	const [doc, setDoc] = useState(() => buildDemoSrcDoc(htmlPreviewDocument(code || " ")));
+	useEffect(() => {
+		const t = setTimeout(() => setDoc(buildDemoSrcDoc(htmlPreviewDocument(code || " "))), 250);
+		return () => clearTimeout(t);
+	}, [code]);
+	useEffect(() => {
+		const onMessage = (e: MessageEvent) => {
+			if (ref.current && e.source === ref.current.contentWindow) setState((s) => reduceDemoBridgeState(s, e.data));
+		};
+		window.addEventListener("message", onMessage);
+		return () => window.removeEventListener("message", onMessage);
+	}, []);
+	return (
+		<iframe
+			ref={ref}
+			title="Live preview"
+			sandbox="allow-scripts"
+			srcDoc={doc}
+			scrolling="no"
+			data-testid="exercise-html-preview"
+			className="w-full rounded-lg border bg-white"
+			style={{ height: Math.max(minHeight, state.height ?? minHeight), boxSizing: "content-box" }}
+		/>
+	);
+}
+
+function HtmlField({ code, onChange }: { code: string; onChange: (c: string) => void }) {
+	return (
+		<div data-testid="exercise-html" className="grid gap-2 lg:grid-cols-2">
+			<CodeEditor language="html" value={code} onChange={onChange} ariaLabel="Your HTML" minHeight={160} testId="exercise-html-editor" />
+			<div>
+				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Live preview</div>
+				<LivePreview code={code} />
+			</div>
+		</div>
+	);
+}
+
 // ─── the answered view (AnsweredCard's exercise body) ───────────────────────
 
 function Mark({ ok }: { ok: boolean }) {
@@ -501,6 +658,9 @@ export function ExerciseSolution({ input }: { input: ExerciseToolInput }) {
 						</div>
 					))}
 				</div>
+			)}
+			{input.format === "sql" && (
+				<pre className="overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap text-green-500">{input.referenceSql}</pre>
 			)}
 			{input.format === "match" && (
 				<ul className="flex flex-col gap-1">
@@ -590,9 +750,38 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 					})}
 				</ul>
 			)}
-			<div className="mt-1 text-xs text-muted-foreground">
-				{Math.round(result.score * 100)}% right ({result.items.filter(Boolean).length}/{result.items.length})
-			</div>
+			{input.format === "sql" && response.format === "sql" && (
+				<div className="flex flex-col gap-2">
+					<pre className="overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap">{response.query}</pre>
+					{response.error ? (
+						<div className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs text-red-500">{response.error}</div>
+					) : (
+						<ResultTable columns={response.columns} rows={response.rows} />
+					)}
+					<div className="flex items-center gap-1.5 text-xs">
+						<Mark ok={result.correct} />
+						{result.correct ? "Same result as the reference query." : `Not the expected result${response.expectedRows !== undefined ? ` (expected ${response.expectedRows} row${response.expectedRows === 1 ? "" : "s"})` : ""}.`}
+					</div>
+					{!result.correct && input.referenceSql && (
+						<details className="text-xs">
+							<summary className="cursor-pointer text-muted-foreground">A correct query</summary>
+							<pre className="mt-1 overflow-auto rounded-lg border bg-muted/40 p-2 font-mono whitespace-pre-wrap text-green-500">{input.referenceSql}</pre>
+						</details>
+					)}
+				</div>
+			)}
+			{input.format === "html" && response.format === "html" && (
+				<div className="grid gap-2 lg:grid-cols-2">
+					<pre className="max-h-72 overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap">{response.code}</pre>
+					<LivePreview code={response.code} />
+				</div>
+			)}
+			{result.graded !== false && input.format !== "sql" && (
+				<div className="mt-1 text-xs text-muted-foreground">
+					{Math.round(result.score * 100)}% right ({result.items.filter(Boolean).length}/{result.items.length})
+				</div>
+			)}
+			{result.graded === false && <div className="mt-1 text-xs text-muted-foreground">The teacher grades this one in the reply.</div>}
 		</div>
 	);
 }
