@@ -222,8 +222,22 @@ describe("learner image loader", () => {
 
 	it("fails with readable errors for missing files, non-images, and directories", async () => {
 		await assert.rejects(loadLearnerImage(path.join(scratch, "nope.png")), /Cannot open image .*nope\.png: no such file/);
-		await assert.rejects(loadLearnerImage(file("notes.txt", "plain text")), /notes\.txt: not a supported image \(jpg, png, gif, webp, or bmp\)/);
+		await assert.rejects(loadLearnerImage(file("notes.txt", "plain text")), /notes\.txt: not a supported image \(jpg, png, gif, webp, bmp, or svg\)/);
 		await assert.rejects(checkLearnerImage(scratch), /not a regular file/);
+	});
+
+	it("rasterizes an SVG figure to PNG, 2x when it is small (fork: course SVGs)", async () => {
+		const svg = '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="#0a0"/></svg>';
+		const image = await loadLearnerImage(file("figure.svg", svg));
+		assert.equal(image.mimeType, "image/png");
+		assert.equal(image.width, 200);
+		assert.equal(image.height, 100);
+		const [r, g, b] = pixel(Buffer.from(image.data, "base64"), 50, 25);
+		assert.ok(g > 100 && r < 50 && b < 50, `the rect paints green (got ${r},${g},${b})`);
+	});
+
+	it("rejects a .svg file that is not SVG markup", async () => {
+		await assert.rejects(loadLearnerImage(file("fake.svg", "hello")), /Not a valid SVG image/);
 	});
 
 	it("resolves relative paths against the learner's home, like read", async () => {

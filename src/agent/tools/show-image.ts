@@ -17,7 +17,7 @@ import type { ChatStore } from "../../core/ports.ts";
  */
 
 const showImageInput = Type.Object({
-	path: Type.String({ minLength: 1, description: "Path to the learner's image file (relative or absolute)" }),
+	path: Type.String({ minLength: 1, description: "Path to the image file (relative or absolute); for a source marker like [Slika: C:/course/slike/x.png] pass the path inside it" }),
 	caption: Type.Optional(Type.String({ description: "One short line shown under the image" })),
 });
 
@@ -26,7 +26,7 @@ export function createShowImageTool(ctx: { chatId: string; chatStore: Pick<ChatS
 		name: "show_image",
 		label: "show_image",
 		description:
-			"Show one of the learner's image files (jpg, png, gif, webp, bmp) in the lesson as-is, with an optional caption. " +
+			"Show a local image file in the lesson as-is, with an optional caption: the learner's own pictures or a figure referenced by his course/source material (jpg, png, gif, webp, bmp, svg). " +
 			"Instant. The result only confirms what was shown — the image is not sent back to you; use read to look at it. " +
 			"To draw marks on the image, call visual with its path instead. Visual results display automatically: do not repeat a newly delivered result. " +
 			"Show a picture again only when resurfacing it meaningfully helps the current explanation. Local paths follow File access settings; use ls to discover allowed folders.",

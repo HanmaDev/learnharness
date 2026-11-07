@@ -13,6 +13,31 @@ export interface LearnerImage extends ImageSnapshot {
 	snapshotId: string;
 }
 
+/** Fork: course material ships SVG figures. They are rasterized to PNG with
+ *  resvg (static render, scripts never run) and then take the same bounded
+ *  normalize path as any raster image. */
+function isSvgPath(absolute: string): boolean {
+	return path.extname(absolute).toLowerCase() === ".svg";
+}
+
+function looksLikeSvg(bytes: Uint8Array): boolean {
+	const head = Buffer.from(bytes.subarray(0, 2048)).toString("utf-8").replace(/^﻿/, "").trimStart();
+	return /^(<\?xml[\s\S]*?)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(head);
+}
+
+/** Below this width an SVG renders at 2x so small diagrams stay legible. */
+const SVG_MIN_RENDER_WIDTH = 800;
+
+async function rasterizeSvg(bytes: Uint8Array): Promise<Uint8Array> {
+	const { Resvg } = await import("@resvg/resvg-js");
+	const svg = Buffer.from(bytes).toString("utf-8");
+	const probe = new Resvg(svg, { font: { loadSystemFonts: true } });
+	const width = probe.width;
+	const opts = width > 0 && width < SVG_MIN_RENDER_WIDTH ? { fitTo: { mode: "zoom" as const, value: 2 } } : {};
+	const resvg = new Resvg(svg, { ...opts, font: { loadSystemFonts: true }, background: "#ffffff" });
+	return resvg.render().asPng();
+}
+
 export async function checkLearnerImage(rawPath: string): Promise<string> {
 	// Reuse the shared file-access policy, including canonical/symlink checks.
 	const absolute = resolveSourcePath(rawPath);
@@ -20,7 +45,7 @@ export async function checkLearnerImage(rawPath: string): Promise<string> {
 		const stat = await fs.stat(absolute);
 		if (!stat.isFile()) throw new Error("it is not a regular file");
 		if (stat.size > MAX_LEARNER_IMAGE_BYTES) throw new Error("image exceeds 25 MiB; provide a smaller image");
-		if (!await detectSupportedImageMimeTypeFromFile(absolute)) throw new Error("not a supported image (jpg, png, gif, webp, or bmp)");
+		if (!isSvgPath(absolute) && !await detectSupportedImageMimeTypeFromFile(absolute)) throw new Error("not a supported image (jpg, png, gif, webp, bmp, or svg)");
 	} catch (error) {
 		const reason = (error as NodeJS.ErrnoException).code === "ENOENT" ? "no such file" : error instanceof Error ? error.message : String(error);
 		throw new Error(`Cannot open image ${absolute}: ${reason}`);
@@ -71,7 +96,16 @@ async function normalize(bytes: Uint8Array, signal?: AbortSignal): Promise<Resiz
 export async function loadLearnerImage(rawPath: string, signal?: AbortSignal): Promise<LearnerImage> {
 	signal?.throwIfAborted();
 	const absolute = await checkLearnerImage(rawPath);
-	const bytes = await readBounded(absolute, signal);
+	let bytes = await readBounded(absolute, signal);
+	if (isSvgPath(absolute)) {
+		if (!looksLikeSvg(bytes)) throw new Error(`Not a valid SVG image: ${absolute}`);
+		try {
+			bytes = await rasterizeSvg(bytes);
+		} catch (error) {
+			throw new Error(`Cannot render SVG ${absolute}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		signal?.throwIfAborted();
+	}
 	const mime = detectSupportedImageMimeType(bytes);
 	if (!mime) throw new Error(`Not a supported image: ${absolute}`);
 	checkImageDimensions(bytes, mime);
