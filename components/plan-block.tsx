@@ -13,7 +13,8 @@ import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
 // d3's curveBasis (the exact recipe dagre-d3's own renderer uses).
 import { curveBasis, line } from "d3-shape";
 import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
-import type { PlanBlockData, PlanNodeStatus, PlanTree } from "@/src/core";
+import type { PlanBlockData, PlanNodeStatus, PlanProgress, PlanTree } from "@/src/core";
+import { PlanProgressPanel } from "@/components/plan-progress";
 import { derivedNodeStatus, derivePlanStatuses } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
 
@@ -482,10 +483,13 @@ export function PlanDiagram({
 	naturalSize,
 	monochrome,
 	fill,
+	doneOf,
 }: {
 	nodes: readonly LayoutNode[];
 	edges: ReadonlyArray<{ from: string; to: string }>;
 	statusOf: (id: string) => PlanNodeStatus;
+	/** Fork: nodes the teacher marked done get a green outline + check. */
+	doneOf?: (id: string) => boolean;
 	glowId?: string | null;
 	markerId: string;
 	/** A windowed viewBox (the plan window) instead of the full extent. */
@@ -613,6 +617,7 @@ export function PlanDiagram({
 			{nodes.map((n) => {
 				const status = statusOf(n.id);
 				const glow = n.id === glowId && !monochrome;
+				const done = !monochrome && (doneOf?.(n.id) ?? false);
 				const lines = wrapTitle(n.title);
 				// The box hugs its wrapped content; text centers in it —
 				// horizontally too now (text-first sizing round, 2026-10-07).
@@ -625,14 +630,23 @@ export function PlanDiagram({
 						transform={`translate(${layout.x.get(n.id) ?? 0}, ${layout.y.get(n.id) ?? 0})`}
 						data-testid={`plan-node-${n.id}`}
 						data-status={status}
+						data-done={done ? "true" : undefined}
 					>
 						{/* Rectangular — no corner rounding (owner). */}
 						<rect
 							width={w}
 							height={h}
-							className={monochrome ? MONO_BOX : BOX[status]}
+							className={monochrome ? MONO_BOX : done ? "fill-background/50 stroke-emerald-400" : BOX[status]}
 							strokeWidth={STROKE_W}
 						/>
+						{done && (
+							// Fork: the done badge — a small green disc with a check,
+							// straddling the top-right corner.
+							<g transform={`translate(${w}, 0)`} data-testid={`plan-node-done-${n.id}`}>
+								<circle r={7} className="fill-emerald-500" />
+								<path d="M -3.2 0.2 L -1 2.4 L 3.2 -2.2" fill="none" stroke="white" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+							</g>
+						)}
 						{glow && (
 							// The current node's highlight: faint yellow, blurred so it
 							// bleeds over the edges — static, no pulse (owner, round 6).
@@ -748,7 +762,14 @@ const POPUP_PAD = GLOW_REACH;
  * territory. Surface 80% + blur (owner decision): the transcript ghosts
  * through while the focus owns the session area.
  */
-export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessage[]; onClose: () => void }) {
+export function PlanPopup({ messages, onClose, progress, onSetTarget }: {
+	messages: readonly PopupMessage[];
+	onClose: () => void;
+	/** Fork: done marks, time and pace (the chat view computes it). */
+	progress?: PlanProgress | null;
+	/** Fork: the plan view's target-date control. */
+	onSetTarget?: (date: string | null) => Promise<boolean>;
+}) {
 	const tree = useMemo(() => latestTree(messages), [messages]);
 	const statuses = useMemo(
 		() => (tree ? derivePlanStatuses(tree, messages as Parameters<typeof derivePlanStatuses>[1]) : null),
@@ -907,6 +928,13 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 				</button>
 </Hint>
 			</div>
+			{progress && tree && (
+				<PlanProgressPanel
+					progress={progress}
+					inProgress={tree.nodes.filter((n) => !progress.doneIds.has(n.id) && statusOf(n.id) !== "upcoming").length}
+					onSetTarget={onSetTarget}
+				/>
+			)}
 			<div
 				ref={viewportRef}
 				className={cn(
@@ -940,6 +968,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 								nodes={tree.nodes}
 								edges={tree.edges}
 								statusOf={statusOf}
+								doneOf={progress ? (id) => progress.doneIds.has(id) : undefined}
 								glowId={statuses?.current ?? null}
 								markerId={markerId}
 								pad={POPUP_PAD}

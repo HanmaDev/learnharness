@@ -473,6 +473,9 @@ export interface QuestionAnswerData {
 	committed?: string; // explain only (rendering): the model's committed answer
 	explanation?: string; // quiz only (rendering)
 	dismissed?: boolean;
+	/** Fork: dismissed because the learner chose "Talk to the teacher" —
+	 *  their message follows the result. */
+	setAside?: boolean;
 	answeredAt: string;
 }
 
@@ -781,7 +784,17 @@ export function dismissedAnswer(kind: QuestionKind, questionText: string): Quest
 	};
 }
 
+/** Fork: the "Talk to the teacher" result — a dismissal that says why. */
+export function setAsideAnswer(kind: QuestionKind, questionText: string): QuestionAnswerData {
+	return { ...dismissedAnswer(kind, questionText), setAside: true };
+}
+
+/** What the teacher reads for a set-aside question (fork). */
+export const SET_ASIDE_NOTE =
+	"The learner set this question aside to talk to you; their message follows. Respond to it fully first, then re-ask this question (or a better one) when it fits.";
+
 export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, unknown> {
+	if (ad.dismissed && ad.setAside) return { kind: ad.kind, setAside: true, note: SET_ASIDE_NOTE };
 	if (ad.dismissed) return { kind: ad.kind, dismissed: true };
 	const out: Record<string, unknown> = { kind: ad.kind };
 	if (ad.dontKnow) out.dontKnow = true;

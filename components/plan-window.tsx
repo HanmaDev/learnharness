@@ -41,7 +41,7 @@ export function planExists(messages: readonly PopupMessage[]): boolean {
 	return !!tree && tree.nodes.length > 0;
 }
 
-export function PlanMarginalia({ messages }: { messages: readonly PopupMessage[] }) {
+export function PlanMarginalia({ messages, doneIds }: { messages: readonly PopupMessage[]; /** Fork: done marks. */ doneIds?: ReadonlySet<string> }) {
 	const markerId = useId().replace(/[^a-zA-Z0-9-]/g, "");
 	const tree = useMemo(() => latestTree(messages), [messages]);
 	const statuses = useMemo(
@@ -55,6 +55,7 @@ export function PlanMarginalia({ messages }: { messages: readonly PopupMessage[]
 			nodes={tree.nodes}
 			edges={tree.edges}
 			statusOf={statusOf}
+			doneOf={doneIds ? (id) => doneIds.has(id) : undefined}
 			glowId={statuses?.current ?? null}
 			markerId={markerId}
 			pad={MARGIN_PAD}

@@ -50,6 +50,7 @@ import {
 } from "@/src/core";
 import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
+import { PlanProgressChip, usePlanProgress } from "@/components/plan-progress";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
 import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
@@ -62,7 +63,7 @@ import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-c
 import { GraphContextCard, type GraphContextData } from "@/components/graph-context-card";
 import { TopBar } from "@/components/top-bar";
 import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
-import type { LhViewMessage } from "@/src/core";
+import type { LhViewMessage, PlanTarget } from "@/src/core";
 import { extractKeyterms } from "@/src/core";
 import { PhaseChip, PhaseDivider } from "@/components/phase-divider";
 import {
@@ -451,6 +452,8 @@ export function Chat({
 		// mount-only by design (turnInFlight read at initial value)
 	}, []);
 
+	// Fork: the plan's target date (a record field; every record sync refreshes it).
+	const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
 	const pending = findPendingToolCall(messages, pendingQuestionOf(nativeMessages));
 	const malformedQuestions = malformedQuestionsOf(nativeMessages);
 	// The abort handler reads the pending question from a ref (the window
@@ -795,7 +798,8 @@ export function Chat({
 	const syncFromServer = useCallback(async () => {
 		const res = await fetch(`/api/chats/${chatId}`);
 		if (!res.ok) return;
-		const record = (await res.json()) as { messages?: LhMessage[]; turns?: TurnUsage[]; pricing?: SessionPricing; turnError?: string };
+		const record = (await res.json()) as { messages?: LhMessage[]; turns?: TurnUsage[]; pricing?: SessionPricing; turnError?: string; planTarget?: PlanTarget };
+		setPlanTarget(record.planTarget ?? null);
 		if (Array.isArray(record.turns)) setTurns(record.turns);
 		setPricing(record.pricing);
 		if (!Array.isArray(record.messages)) return;
@@ -834,7 +838,8 @@ export function Chat({
 		try {
 			const res = await fetch(`/api/chats/${chatId}`);
 			if (!res.ok) return;
-			const record = (await res.json()) as { messages?: LhMessage[] };
+			const record = (await res.json()) as { messages?: LhMessage[]; planTarget?: PlanTarget };
+			setPlanTarget(record.planTarget ?? null);
 			if (!Array.isArray(record.messages)) return;
 			adoptRecord(record.messages);
 		} catch {
@@ -922,6 +927,20 @@ export function Chat({
 	// The session's live plan (drives the top-bar chip; the marginalia
 	// derives its own from the same transcript).
 	const planTree = useMemo(() => latestTree(messages), [messages]);
+	// Fork: plan progress — done marks (from the record), study time, the
+	// target date (record field, refreshed with every record sync) and pace.
+	const planProgress = usePlanProgress(planTree, nativeMessages, planTarget);
+	const setPlanTargetDate = useCallback(async (date: string | null): Promise<boolean> => {
+		const res = await fetch(`/api/chats/${chatId}/plan-target`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ date }),
+		});
+		if (!res.ok) return false;
+		const body = (await res.json().catch(() => null)) as { planTarget?: PlanTarget | null } | null;
+		setPlanTarget(body?.planTarget ?? null);
+		return true;
+	}, [chatId]);
 
 	// ── Session usage (wave-4 stats bar) ──
 	// The money channel: the record's turns log and read-time server Pi
@@ -944,7 +963,8 @@ export function Chat({
 		try {
 			const res = await fetch(`/api/chats/${chatId}`);
 			if (!res.ok) return;
-			const record = (await res.json()) as { turns?: TurnUsage[]; pricing?: SessionPricing };
+			const record = (await res.json()) as { turns?: TurnUsage[]; pricing?: SessionPricing; planTarget?: PlanTarget };
+			setPlanTarget(record.planTarget ?? null);
 			if (Array.isArray(record.turns)) setTurns(record.turns);
 			setPricing(record.pricing);
 		} catch {
@@ -1375,6 +1395,7 @@ export function Chat({
 						>
 							<WaypointsIcon className="size-3.5 text-primary" aria-hidden />
 							Plan
+							{planProgress && <PlanProgressChip progress={planProgress} />}
 						</button>
 </Hint>
 					)}
@@ -1706,7 +1727,7 @@ export function Chat({
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
 					onModelChange={setSelectedModel}
-					plan={hasPlan ? <PlanMarginalia messages={messages} /> : undefined}
+					plan={hasPlan ? <PlanMarginalia messages={messages} doneIds={planProgress?.doneIds} /> : undefined}
 					onOpenPlan={() => setPlanOpen(true)}
 					requiresReveal={requiresReveal}
 					readingThinking={readingThinkingSeed.value}
@@ -1763,6 +1784,12 @@ export function Chat({
 							placeholder={nextReady ? "Ask anything, or press Enter for the next one." : undefined}
 						/>
 					}
+					onTalk={(text) => {
+						// Fork: "Talk to the teacher" — every waiting question is set
+						// aside (the teacher reads why) and the message runs a turn.
+						if (!pending) return;
+						void send({ type: "interrupt", text });
+					}}
 					onSubmitAnswer={(output) => {
 						if (!pending) return;
 						// THE ANSWER IS THE QUESTION CALL'S TOOL RESULT (fork 1, owner
@@ -1796,7 +1823,7 @@ export function Chat({
 						onClose={() => setFigureFocus(null)}
 					/>
 				)}
-				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} />}
+				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} progress={planProgress} onSetTarget={setPlanTargetDate} />}
 				<AbortTurnDialog mode={abortAsk} onClose={() => setAbortAsk(null)} onConfirm={confirmAbort} busy={busy} />
 				</div>
 			</div>
@@ -1970,6 +1997,7 @@ function DockOverlay({
 	pricing,
 	composer,
 	onSubmitAnswer,
+	onTalk,
 	chatId,
 	onModelChange,
 	onReserve,
@@ -2008,6 +2036,8 @@ function DockOverlay({
 	pricing?: SessionPricing;
 	composer: React.ReactNode;
 	onSubmitAnswer: (output: QuestionAnswerData) => void;
+	/** Fork: "Talk to the teacher" from a waiting question. */
+	onTalk?: (text: string) => void;
 	/** The model control's pass-through (the stats bar hosts it). */
 	chatId: string;
 	onModelChange: (model: string | undefined) => void;
@@ -2429,6 +2459,7 @@ function DockOverlay({
 									phase={phase}
 									onExpand={expandAndReveal}
 									onSubmit={onSubmitAnswer}
+									onTalk={onTalk}
 									initialDraft={initialQuestionDraft}
 									onSaveDraft={onSaveQuestionDraft}
 									onEscape={dictationCancel}

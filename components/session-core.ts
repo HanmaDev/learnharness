@@ -16,6 +16,9 @@
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import {
+	danglingQuestionsOf,
+	setAsideAnswer,
+	toolQuestionKind,
 	needsContinuation,
 	pendingQuestionOf,
 	failedResponseAtEnd,
@@ -707,6 +710,14 @@ export class SessionModel {
 			// The move-on signal (owner round 16): the NEXT PROBLEM line
 			// renders the instant the chip/Enter fires.
 			optimistic.push({ ...newNextMessage(), id: localId() });
+		} else if (input.type === "interrupt") {
+			// Fork: "Talk to the teacher" — the set-aside results and the
+			// learner's message land optimistically, mirroring inputAppends.
+			for (const q of danglingQuestionsOf([...this.base, ...this.tail])) {
+				const question = (q.input as { question?: unknown } | null)?.question;
+				optimistic.push({ ...newAnswerResult(q.toolCallId, q.tool, setAsideAnswer(toolQuestionKind(q.tool), typeof question === "string" ? question : "")), id: localId() });
+			}
+			optimistic.push({ ...newUserMessage(input.text), id: localId() });
 		} else if (input.type === "answer") {
 			const tool = pendingCallTool([...this.base, ...this.tail], input.toolCallId) ?? "quiz";
 			const result = { ...newAnswerResult(input.toolCallId, tool, input.answer), id: localId() };

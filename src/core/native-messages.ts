@@ -76,7 +76,9 @@ export interface LhMarkerMessage {
 		| "practice-thinking"
 		| "practice-next"
 		| "problem-dismissed"
-		| "compaction";
+		| "compaction"
+		/** Fork: the learner changed the plan's target date in the plan view. */
+		| "plan-target";
 	/** The model-facing text ("" for plan blocks — UI-only). */
 	content: string;
 	display: boolean;
@@ -220,6 +222,34 @@ export function newAnswerResult(
 		isError: false,
 		timestamp: Date.now(),
 	};
+}
+
+/** Fork: the one-time notice that the learner changed the plan's target
+ *  date in the plan view (model-facing; the view hides it). `at` keys it to
+ *  that change, so each change is announced once. */
+export function newPlanTargetNotice(target: { date: string; at: string } | null, at: string): LhMarkerMessage {
+	return {
+		id: `pt_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`,
+		role: "custom",
+		customType: "plan-target",
+		content: target
+			? `[The learner set this plan's target date to ${target.date} in the plan view. Use it for pacing; plan_progress reports the numbers.]`
+			: "[The learner removed this plan's target date in the plan view.]",
+		display: false,
+		details: { date: target?.date ?? null, at },
+		timestamp: Date.now(),
+	};
+}
+
+/** Has the learner's latest target-date change already been announced? */
+export function planTargetAnnounced(messages: readonly LhMessage[], at: string): boolean {
+	return messages.some((m) => m.role === "custom" && m.customType === "plan-target" && (m.details as { at?: unknown } | null)?.at === at);
+}
+
+/** Fork: every answerable (dangling) question call, oldest first — the
+ *  interrupt sets them all aside at once. */
+export function danglingQuestionsOf(messages: readonly LhMessage[]): Array<{ toolCallId: string; tool: string; input: unknown }> {
+	return questionCallsOf(messages).filter((call) => call.status === "answerable").map((call) => ({ toolCallId: call.toolCallId, tool: call.tool, input: call.input }));
 }
 
 /** The probe→teach handoff wake: scaffolding, not speech — the model reads
@@ -847,7 +877,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "custom") {
 		if (["probe-handoff", "subagent-steer", "subagent-abort"].includes(message.customType)) return "automatic";
 		if (["practice-thinking", "practice-next"].includes(message.customType)) return "learner";
-		return ["graph-context", "plan-block", "problem-dismissed", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
+		return ["graph-context", "plan-block", "problem-dismissed", "compaction", "plan-target"].includes(message.customType) ? "neutral" : "unrecognizable";
 	}
 	if (message.role === "toolResult") {
 		if (message.isError && (message.details as { questionRecovery?: unknown } | null)?.questionRecovery === true) {

@@ -10,6 +10,7 @@ import { useDictationGhost } from "@/components/dictation-state";
 import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { MarkdownInsideControl } from "@/components/md-blocks";
+import { TalkToTeacher } from "@/components/talk-to-teacher";
 import { cn } from "@/lib/utils";
 import {
 	buildAnswer,
@@ -99,6 +100,9 @@ export interface QuestionDockProps {
 	 *  and say so in the hint row. The server registry is the real gate;
 	 *  this is the affordance. */
 	compactionRunning?: boolean;
+	/** Fork: "Talk to the teacher" — set the question aside and send this
+	 *  message instead. Absent = no talk affordance (tests, old callers). */
+	onTalk?: (text: string) => void;
 }
 
 export function QuestionDock({
@@ -115,7 +119,10 @@ export function QuestionDock({
 	phase = "probe",
 	dictationClaim = true,
 	compactionRunning = false,
+	onTalk,
 }: QuestionDockProps) {
+	// Fork: the talk field, open/closed (it owns dictation while open).
+	const [talkOpen, setTalkOpen] = useState(false);
 	// The probe-phase names (owner, 2026-10-09) canonicalize onto their
 	// teach twins for every dock concern — parse dispatch, labels, kinds:
 	// the probe quiz ("probe") is quiz-shaped, the probe free-recall
@@ -165,9 +172,18 @@ export function QuestionDock({
 					initialDraft={initialDraft}
 					onSaveDraft={onSaveDraft}
 					onEscape={onEscape}
-					dictationClaim={dictationClaim}
+					dictationClaim={dictationClaim && !talkOpen}
 					compactionRunning={compactionRunning}
 				/>
+				{onTalk && (
+					<TalkToTeacher
+						active={expanded}
+						open={talkOpen}
+						onOpenChange={setTalkOpen}
+						onTalk={onTalk}
+						disabled={compactionRunning}
+					/>
+				)}
 			</div>
 		</>
 	);
@@ -491,6 +507,8 @@ function QuestionDockForm({
 		if (!active || rowCount === 0) return;
 		const onKeyDown = (e: KeyboardEvent) => {
 			const t = e.target as HTMLElement | null;
+			// Fork: the talk field is its own surface — none of the dock's keys.
+			if (t?.closest?.("[data-talk-to-teacher]")) return;
 			// A TYPING field is where keys mean text (owner round 4): the
 			// thinking/answer fields, search boxes, renames — never a range
 			// input, whose focus after a click or drag must not kill the

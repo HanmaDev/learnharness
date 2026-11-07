@@ -9,6 +9,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { LhMessage } from "../native-messages.ts";
 import type { Phase3 } from "../phases.ts";
 import type { PlanNodeStatus, PlanTree } from "./plan.ts";
+import type { PlanTarget } from "../plan-progress.ts";
 import type { EmissionStats } from "./graph.ts";
 
 // ─── Chat records (the session store's on-disk format) ───────────────────────
@@ -39,6 +40,12 @@ export interface ChatRecord {
 	kind?: ChatKind;
 	/** The session's plan tree (vision §2) — written by plan tools via saveTree. */
 	tree?: PlanTree;
+	/** Fork: the plan's target finish date — set by the teacher (plan_init
+	 *  targetDate) or the learner (plan view). Survives map rewrites. */
+	planTarget?: PlanTarget;
+	/** Fork: when the learner last cleared the target date (keys the one
+	 *  notice telling the teacher). */
+	planTargetClearedAt?: string;
 	/** Append-only usage log (observability, 2026-09): one entry per model
 	 * turn. DELIBERATELY a parallel log, not per-message metadata — the client
 	 * re-POSTs its message list every turn and its copies never carry
@@ -273,6 +280,8 @@ export interface ChatSummary {
 	/** Practice sessions (2026-10-04): a posed problem with no conclude —
 	 *  the sidebar meta's "Problem waiting". False on teaching sessions. */
 	pendingProblem: boolean;
+	/** Fork: % of plan nodes the teacher marked done; absent without a plan. */
+	planPercent?: number;
 	/** The record's model-control settings — rides the list payload via the
 	 *  summary spread (the picker never needs it from here; the full record
 	 *  is its source). */

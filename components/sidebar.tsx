@@ -279,6 +279,8 @@ function sessionMeta(chat: ChatListItem): string {
 		return `Problem waiting · ${timeAgo(chat.updatedAt)}`;
 	}
 	if (chat.busy) return "Working…";
+	// Fork: plan progress rides the idle line.
+	if (typeof chat.planPercent === "number") return `${chat.planPercent}% done · ${timeAgo(chat.updatedAt)}`;
 	return timeAgo(chat.updatedAt);
 }
 

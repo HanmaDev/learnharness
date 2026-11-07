@@ -5,6 +5,8 @@ import type { PlanToolResult, PlanTree } from "../../core/contracts.ts";
 import type { ChatStore } from "../../core/ports.ts";
 import { createTree, PlanTreeError } from "../../core/plan-tree.ts";
 import { parseMermaidPlan } from "./mermaid-plan.ts";
+import { computePlanProgress, isPlanDate, planProgressText } from "../../core/plan-progress.ts";
+import type { LhMessage } from "../../core/native-messages.ts";
 
 /** The binding-id reminder riding plan_init's slim content (owner,
  *  2026-10-09): plan_init is the exact moment the node ids become
@@ -50,6 +52,10 @@ export interface PlanToolContext {
  * agent-invisible channel, serializer-verified).
  */
 const planInitInput = Type.Object({
+	// Fork: the learner's target finish date, when they gave one.
+	targetDate: Type.Optional(Type.String({
+		description: "The learner's target date to finish this plan, YYYY-MM-DD (ask for it while planning). Omit to keep the current one.",
+	})),
 	mermaid: Type.String({
 		minLength: 1,
 		description:
@@ -71,11 +77,14 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 				"`-->` edges meaning 'from must be understood before to' (chains fine). 5–15 nodes: a map, not a syllabus — one reasoning step per node, compress. " +
 				"Every check you fire names the node it assesses via `nodeId`; where the lesson stands derives from those tags.",
 			parameters: planInitInput,
-			execute: serverExecute("plan_init", planInitInput, async ({ mermaid }) => {
+			execute: serverExecute("plan_init", planInitInput, async ({ mermaid, targetDate }) => {
 				const { chatId, chatStore } = ctx;
 				const record = chatStore.getChat(chatId);
 				if (!record) return { ok: false, error: `Chat not found: ${chatId}` };
 
+				if (targetDate !== undefined && !isPlanDate(targetDate)) {
+					return { ok: false, error: `targetDate must be a real calendar date as YYYY-MM-DD (got "${targetDate}").` };
+				}
 				const parsed = parseMermaidPlan(mermaid);
 				if (!parsed.ok || !parsed.plan) {
 					// The parser collects every problem; the teacher fixes and retries.
@@ -88,6 +97,10 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 					// edge endpoints, self-loops, cycles → PlanTreeError).
 					const next = createTree(parsed.plan.nodes, parsed.plan.edges);
 					chatStore.saveTree(chatId, next);
+					if (targetDate !== undefined) {
+						chatStore.savePlanTarget(chatId, { date: targetDate, setBy: "teacher", at: new Date().toISOString() });
+					}
+					const target = chatStore.getChat(chatId)?.planTarget ?? null;
 					// Context diet: content = the validated nodeIds + the reminder (the
 				// ids just became binding for every quiz/explain call); details =
 					// the full tree for the record/UI — the plan popup's latestTree
@@ -97,6 +110,7 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 							ok: true,
 							nodeIds: next.nodes.map((n) => n.id),
 							reminder: PLAN_NODE_IDS_REMINDER,
+							targetDate: target?.date ?? null,
 						}),
 						details: { ok: true, tree: next },
 					};
@@ -106,5 +120,46 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 				}
 			}),
 		},
+		plan_progress: {
+			name: "plan_progress",
+			label: "plan_progress",
+			description:
+				"Mark plan nodes done (or reopen them) and read the learner's progress: done count, study time, estimated time left, " +
+				"and pace toward the target date. `done`/`reopen` take node ids from plan_init; call with neither to just read the numbers. " +
+				"The learner sees progress live in the top bar and plan view.",
+			parameters: planProgressInput,
+			execute: serverExecute("plan_progress", planProgressInput, async ({ done, reopen }) => {
+				const { chatId, chatStore } = ctx;
+				const record = chatStore.getChat(chatId);
+				if (!record) return { ok: false, error: `Chat not found: ${chatId}` };
+				const tree = record.tree;
+				if (!tree || tree.nodes.length === 0) return { ok: false, error: "There is no plan yet — call plan_init first." };
+				const ids = new Set(tree.nodes.map((n) => n.id));
+				const unknown = [...(done ?? []), ...(reopen ?? [])].filter((id) => !ids.has(id));
+				if (unknown.length > 0) {
+					return { ok: false, error: `Unknown node id(s): ${unknown.join(", ")}. Valid ids: ${[...ids].join(", ")}.` };
+				}
+				// The record holds earlier turns; THIS call isn't persisted yet,
+				// so fold its own change on top (same order: done, then reopen).
+				const synthetic: LhMessage = {
+					id: "plan_progress_now", role: "assistant", content: [{ type: "toolCall", id: "now", name: "plan_progress", arguments: { done: done ?? [], reopen: reopen ?? [] } }],
+					timestamp: Date.now(),
+				} as unknown as LhMessage;
+				const result: LhMessage = { id: "plan_progress_now_r", role: "toolResult", toolCallId: "now", toolName: "plan_progress", content: [], isError: false, timestamp: Date.now() } as unknown as LhMessage;
+				const progress = computePlanProgress({
+					tree,
+					messages: [...record.messages, synthetic, result],
+					target: record.planTarget ?? null,
+					now: Date.now(),
+				});
+				return { text: planProgressText(progress) };
+			}),
+		},
 	};
 }
+
+const planProgressInput = Type.Object({
+	done: Type.Optional(Type.Array(Type.String(), { description: "Node ids the learner now understands (checks justify it)." })),
+	reopen: Type.Optional(Type.Array(Type.String(), { description: "Done node ids to reopen (the learner is struggling with them again)." })),
+});
+

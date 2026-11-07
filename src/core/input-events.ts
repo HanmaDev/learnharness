@@ -28,13 +28,16 @@
  * turn rides one composition.
  */
 
-import type { QuestionAnswerData } from "./question-core.ts";
+import { setAsideAnswer, type QuestionAnswerData } from "./question-core.ts";
 import type { LhMessage } from "./native-messages.ts";
 import {
 	activeProblemOf,
 	concludedByDismissalPair,
 	danglingQuestionOf,
+	danglingQuestionsOf,
 	newAnswerResult,
+	newPlanTargetNotice,
+	planTargetAnnounced,
 	newNextMessage,
 	newProblemDismissedMarker,
 	newThinkingMessage,
@@ -63,7 +66,10 @@ export type ChatInput =
 	 *  explicit go-ahead during the between-problems pause — the Next
 	 *  chip or Enter on an empty composer. Practice sessions only, and
 	 *  only with nothing active (mid-problem input rides the dock). */
-	| { type: "next" };
+	| { type: "next" }
+	/** Fork: "Talk to the teacher" — set every waiting question aside and
+	 *  send the learner's message instead of an answer. */
+	| { type: "interrupt"; text: string };
 
 /** A wake-pipeline steer delivery — same turn composition, server-origin.
  *  Wave C (2026-09-26): the idle wake carries EVERY queued marker as its
@@ -197,6 +203,11 @@ export function parseChatInput(input: unknown): ChatInput {
 			return { type: "thinking", problemCallId: i.problemCallId, text: i.text };
 		case "next":
 			return { type: "next" };
+		case "interrupt":
+			if (typeof i.text !== "string" || (i.text as string).trim().length === 0) {
+				throw new ChatInputError("interrupt input requires non-empty text");
+			}
+			return { type: "interrupt", text: i.text };
 		default:
 			throw new ChatInputError(`unknown input type: ${String(i.type)}`);
 	}
@@ -212,18 +223,41 @@ export function parseChatInput(input: unknown): ChatInput {
  * double-answering.
  */
 export function inputAppends(
-	record: { messages: LhMessage[]; kind?: string },
+	record: { messages: LhMessage[]; kind?: string; planTarget?: { date: string; at: string; setBy: string } },
 	input: ChatInput,
+	/** Fork: when the learner last cleared the target date (no planTarget
+	 *  left to key the notice) — the caller passes it; tests omit it. */
+	clearedTargetAt?: string,
 ): LhMessage[] {
+	// Fork: a learner-made target-date change rides the next learner input,
+	// once (after any tool results, so call/result adjacency holds).
+	const notice = (): LhMessage[] => {
+		const t = record.planTarget;
+		if (t?.setBy === "learner" && !planTargetAnnounced(record.messages, t.at)) return [newPlanTargetNotice(t, t.at)];
+		if (!t && clearedTargetAt && !planTargetAnnounced(record.messages, clearedTargetAt)) return [newPlanTargetNotice(null, clearedTargetAt)];
+		return [];
+	};
 	switch (input.type) {
 		case "text":
-			return [...dismissalConclusion(record), newUserMessage(input.text)];
+			return [...dismissalConclusion(record), ...notice(), newUserMessage(input.text)];
 		case "answer": {
 			const pending = danglingQuestionOf(record.messages);
 			if (!pending || pending.toolCallId !== input.toolCallId) {
 				throw new ChatInputError("answer input targets no pending question call");
 			}
-			return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
+			return [newAnswerResult(input.toolCallId, pending.tool, input.answer), ...notice()];
+		}
+		case "interrupt": {
+			const waiting = danglingQuestionsOf(record.messages);
+			if (waiting.length === 0) throw new ChatInputError("interrupt input targets no pending question call");
+			return [
+				...waiting.map((q) => {
+					const question = (q.input as { question?: unknown } | null)?.question;
+					return newAnswerResult(q.toolCallId, q.tool, setAsideAnswer(toolQuestionKind(q.tool), typeof question === "string" ? question : ""));
+				}),
+				...notice(),
+				newUserMessage(input.text),
+			];
 		}
 		case "continue":
 			return dismissalConclusion(record);

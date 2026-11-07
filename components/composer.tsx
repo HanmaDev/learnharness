@@ -101,6 +101,10 @@ export function ChatSessionComposer({
 	);
 }
 
+const DEFAULT_PLACEHOLDER = "Ask, answer, or steer the lesson…";
+/** Fork: while the teacher writes, say plainly that typing interrupts it. */
+const BUSY_PLACEHOLDER = "Type to interrupt the teacher (Enter sends now), or press Stop…";
+
 export function Composer({
 	busy,
 	value,
@@ -111,7 +115,7 @@ export function Composer({
 	autoFocus,
 	inputRef,
 	onEscape,
-	placeholder = "Ask, answer, or steer the lesson…",
+	placeholder: placeholderProp,
 	nextProblem = false,
 	onNext,
 }: {
@@ -184,7 +188,7 @@ export function Composer({
 						act();
 					}
 				}}
-				placeholder={placeholder}
+				placeholder={placeholderProp ?? (busy ? BUSY_PLACEHOLDER : DEFAULT_PLACEHOLDER)}
 				autoFocus={autoFocus}
 				className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 			/>

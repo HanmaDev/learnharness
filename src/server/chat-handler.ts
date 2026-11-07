@@ -326,7 +326,7 @@ export async function handleChatInput(
 		appends =
 			input.type === "steers"
 				? input.steers.filter((s) => !steerDelivered(record.messages, s.id))
-				: inputAppends(record, input);
+				: inputAppends(record, input, record.planTargetClearedAt);
 	} catch (err) {
 		if (err instanceof ChatInputError) {
 			return Response.json({ error: err.message }, { status: 400 });

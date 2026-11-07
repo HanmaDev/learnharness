@@ -10,6 +10,7 @@
  */
 
 import type { LhMessage } from "./native-messages.ts";
+import type { PlanTarget } from "./plan-progress.ts";
 import type {
 	ChatRecord,
 	ImageSnapshot,
@@ -47,6 +48,8 @@ export interface ChatStore {
 	saveImageSnapshot(id: string, snapshotId: string, image: ImageSnapshot): void;
 	/** Persist the session plan tree (plan tools call this in execute). */
 	saveTree(id: string, tree: PlanTree): void;
+	/** Fork: set or clear (null) the plan's target date. */
+	savePlanTarget(id: string, target: PlanTarget | null): void;
 	/** Append one usage entry to the record's turn log (the money channel,
 	 * 2026-09): idempotent per turn id — each request carries its own, so
 	 * a turn persisted twice appends once while continuation turns (which

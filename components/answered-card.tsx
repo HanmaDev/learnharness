@@ -25,8 +25,10 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
 	if (answer.dismissed) {
 		return (
-			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
-				<span className="font-medium">{answer.questionText}</span> — skipped
+			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground" data-testid={savedAnswer.setAside ? "answered-set-aside" : "answered-skipped"}>
+				<span className="font-medium">{answer.questionText}</span>
+				{/* Fork: "Talk to the teacher" — the question waits, it was not skipped. */}
+				{savedAnswer.setAside ? " — set aside: you talked to the teacher" : " — skipped"}
 			</div>
 		);
 	}

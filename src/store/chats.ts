@@ -14,6 +14,7 @@ import { PATHS } from "../../config.ts";
 import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
 import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, ImageSnapshot, PlanTree, TurnUsage } from "../core/contracts.ts";
+import { deriveDoneNodes, type PlanTarget } from "../core/plan-progress.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
@@ -113,6 +114,10 @@ function listChats(): ChatSummary[] {
 						// "Problem waiting"); false on teaching sessions, which
 						// have no problem tool.
 						pendingProblem: activeProblemOf(messages) !== null,
+						// Fork: the sidebar's progress badge.
+						...(tree && tree.nodes.length > 0
+							? { planPercent: Math.round((deriveDoneNodes(tree, messages).size / tree.nodes.length) * 100) }
+							: {}),
 					};
 				} catch (err) {
 					console.error(`[chat ${summary.id}] summary projection failed:`, err);
@@ -226,6 +231,22 @@ function saveTree(id: string, tree: PlanTree): void {
 	writeChat(record);
 }
 
+/** Fork: the plan's target date. Like saveTree, not conversation activity
+ *  (updatedAt stays put). A synchronous read/merge/write, so a turn's later
+ *  saveMessages keeps it. */
+function savePlanTarget(id: string, target: PlanTarget | null): void {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	if (target) {
+		record.planTarget = target;
+		delete record.planTargetClearedAt;
+	} else if (record.planTarget) {
+		delete record.planTarget;
+		record.planTargetClearedAt = new Date().toISOString();
+	}
+	writeChat(record);
+}
+
 export const chatStore: ChatStore = {
 	createChat,
 	getChat,
@@ -233,6 +254,7 @@ export const chatStore: ChatStore = {
 	saveMessages,
 	saveImageSnapshot,
 	saveTree,
+	savePlanTarget,
 	saveSettings,
 	renameChat,
 	deleteChat,
