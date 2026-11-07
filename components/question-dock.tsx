@@ -8,6 +8,7 @@ import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
 import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
+import { MarkdownInsideControl } from "@/components/md-blocks";
 import { cn } from "@/lib/utils";
 import {
 	buildAnswer,
@@ -171,9 +172,16 @@ export function QuestionDock({
 	);
 }
 
-/** A plain-text teaser of a question for the collapsed bar: unwrap math, flatten common LaTeX. */
-function teaserText(q: string): string {
-	return repairMathForDisplay(q)
+/** A plain-text teaser of a question for the collapsed bar: fenced code
+ *  collapses to a "[code]" marker (fork), inline code loses its backticks,
+ *  math unwraps, common LaTeX flattens. Runs before the math rules so `$`
+ *  inside code never reads as math. */
+export function teaserText(q: string): string {
+	return repairMathForDisplay(
+		q
+			.replace(/(^|\n)[ \t]*(```|~~~)[^\n]*\n[\s\S]*?(\n[ \t]*\2[ \t]*(?=\n|$)|$)/g, "$1 [code] ")
+			.replace(/`([^`\n]+)`/g, "$1"),
+	)
 		.replace(/\\\(([\s\S]*?)\\\)/g, "$1") // \(...\) inline math
 		.replace(/\\\[([\s\S]*?)\\\]/g, "$1") // \[...\] display math
 		.replace(/\$\$?([^$]*)\$\$?/g, "$1") // standard $...$/$$...$$ math
@@ -617,7 +625,8 @@ function QuestionDockForm({
 											</span>
 										)}
 									</span>
-									<span>
+									<span className="min-w-0 flex-1">
+										<MarkdownInsideControl>
 										<ToolContentResponse>{opt.label}</ToolContentResponse>
 										{kind !== "quiz" && opt.description && (
 											// Option subtext renders in Source Sans 3 (owner's mockup);
@@ -631,6 +640,7 @@ function QuestionDockForm({
 												{opt.description}
 											</ToolContentResponse>
 										)}
+										</MarkdownInsideControl>
 									</span>
 								</button>
 							);

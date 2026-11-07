@@ -27,7 +27,7 @@
  * EXPAND icon (opens the session overlay) when a chat page is mounted.
  */
 
-import { cloneElement, isValidElement, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { CheckIcon, CopyIcon, MaximizeIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -226,6 +226,15 @@ function MermaidInline({ chart }: { chart: string }) {
 	);
 }
 
+/** Fork: markdown rendered INSIDE an interactive control (a quiz option is a
+ *  <button>) must not mount its own buttons — nested buttons are invalid
+ *  HTML and steal the option's click. Code blocks there render without the
+ *  hover-copy corner. */
+const InsideControlContext = createContext(false);
+export function MarkdownInsideControl({ children }: { children: ReactNode }) {
+	return <InsideControlContext.Provider value={true}>{children}</InsideControlContext.Provider>;
+}
+
 /** The Streamdown `code` override: inline code passes through with the
  *  house inline classes; block fences split — mermaid renders as the bare
  *  chart above, everything else delegates to streamdown's exported
@@ -235,6 +244,7 @@ function MermaidInline({ chart }: { chart: string }) {
  *  (data-streamdown="code-block"…). */
 export function MarkdownCode(props: ComponentProps<"code"> & ExtraProps) {
 	const incomplete = useIsCodeFenceIncomplete();
+	const insideControl = useContext(InsideControlContext);
 	const { children, className, node, ...rest } = props;
 
 	// Inline code: no data-block (the pre handler stamps block fences only).
@@ -257,7 +267,7 @@ export function MarkdownCode(props: ComponentProps<"code"> & ExtraProps) {
 	const lineNumbers = !/\bnoLineNumbers\b/.test(meta);
 	return (
 		<div className="group/md relative" data-testid="md-code">
-			<CopyCorner className="absolute top-1.5 right-2 z-10" getText={() => source} label="Copy code" />
+			{!insideControl && <CopyCorner className="absolute top-1.5 right-2 z-10" getText={() => source} label="Copy code" />}
 			<CodeBlock
 				code={source}
 				language={language}

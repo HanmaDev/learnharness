@@ -72,7 +72,7 @@ export function createPracticeGate(ctx: PracticeToolContext): PracticeGate {
 export const problemInputObject = Type.Object({
 	statement: Type.String({
 		description:
-			"REQUIRED — the problem as the learner sees it (markdown + LaTeX). Must be self-contained and " +
+			"REQUIRED — the problem as the learner sees it (markdown + LaTeX; any code, SQL, HTML, or table data in a fenced code block with a language tag, e.g. ```sql). Must be self-contained and " +
 			"solvable from the session's material. NEVER announces the target proposition.",
 	}),
 	mode: Type.Union([Type.Literal("recall"), Type.Literal("discrimination"), Type.Literal("composition")], {
@@ -88,7 +88,7 @@ export const problemInputObject = Type.Object({
 		}),
 	),
 	modelSolution: Type.String({
-		description: "REQUIRED — the full solution, moves in order, committed BEFORE the learner sees the problem. This IS the reveal — conclude shows it verbatim; never re-author it.",
+		description: "REQUIRED — the full solution, moves in order, committed BEFORE the learner sees the problem. This IS the reveal — conclude shows it verbatim; never re-author it. Renders markdown + LaTeX: code in fenced blocks with a language tag.",
 	}),
 });
 
@@ -174,7 +174,7 @@ export const concludeInputObject = Type.Object({
 		{ description: "REQUIRED — the outcome: solved, solvedWithHints, movedOn, or surrendered — bare words, no quotes (dismissed is synthesized, never yours)." },
 	),
 	verdict: Type.String({
-		description: "REQUIRED — the plain-language verdict: what was credited, where it broke. On a wrong answer: localize the break, do NOT give the correction.",
+		description: "REQUIRED — the plain-language verdict: what was credited, where it broke. On a wrong answer: localize the break, do NOT give the correction. Renders markdown: quote code in `inline code` or fenced blocks.",
 	}),
 	rung: Type.Union(
 		[Type.Literal("R0"), Type.Literal("R1"), Type.Literal("R2"), Type.Literal("R3"), Type.Literal("R4"), Type.Literal("R5"), Type.Null()],

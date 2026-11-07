@@ -31,13 +31,18 @@ export interface QuizOption {
 // ─── tool input schemas (the question contract) ─────────────────────────────
 // Parameter names mirror the prompt docs exactly — keep them in sync.
 
+// Rendering mechanics shared by every learner-visible text field: all of
+// them render markdown + LaTeX, and code must arrive fenced so it displays as
+// a highlighted block instead of a run-on line (fork: SQL/HTML practice).
+const MD = " Renders markdown and LaTeX: put any code, SQL, HTML, or query output in a fenced code block with a language tag (```sql), short identifiers in `inline code`.";
+
 /** One quiz answer option. Owner ruling (2026-09-26): NO `description`
  *  field — the model reliably used it to leak correctness ("that's not the
  *  gradient", "close but…"), making quizzes answerable by elimination.
  *  Neutral elaboration belongs in the question text or the post-answer
  *  explanation; the option is a bare claim. */
 const quizOptionProps = {
-	label: Type.String({ description: "Display label for the answer option — a bare claim, no reasoning" }),
+	label: Type.String({ description: "Display label for the answer option — a bare claim, no reasoning." + MD }),
 	value: Type.Optional(
 		Type.String({
 			description: "Optional machine-readable value returned for the option. Defaults to the label.",
@@ -50,7 +55,7 @@ const quizOptionProps = {
 const askOptionProps = {
 	...quizOptionProps,
 	description: Type.Optional(
-		Type.String({ description: "Optional extra detail shown below the option" }),
+		Type.String({ description: "Optional extra detail shown below the option." + MD }),
 	),
 };
 
@@ -158,7 +163,7 @@ export function quizInputProblems(input: {
 export const quizInputBase = Type.Object({
 	question: Type.String({
 		description:
-			"The single quiz question to ask. ONE question per turn: ask, then end your turn — the answer determines the next question.",
+			"The single quiz question to ask. ONE question per turn: ask, then end your turn — the answer determines the next question." + MD,
 	}),
 	options: Type.Array(Type.Object(quizOptionProps), {
 		minItems: 2,
@@ -177,7 +182,7 @@ export const quizInputBase = Type.Object({
 		description:
 			"REQUIRED. Explanation revealed AFTER the learner answers (shown whether they got it right or wrong). " +
 			"Use it to reinforce why the correct answer is correct. It is written BEFORE correctAnswer by design: " +
-			"reason it out first, then commit the answer the reasoning supports.",
+			"reason it out first, then commit the answer the reasoning supports." + MD,
 	}),
 	correctAnswer: Type.Union([Type.String(), Type.Array(Type.String())], {
 		description:
@@ -188,7 +193,7 @@ export const quizInputBase = Type.Object({
 			"A value that matches no option fails validation and the call is returned to you to fix.",
 	}),
 	details: Type.Optional(
-		Type.String({ description: "Optional extra context or instructions shown under the question." }),
+		Type.String({ description: "Optional extra context or instructions shown under the question." + MD }),
 	),
 });
 
@@ -303,17 +308,17 @@ export const quizDisplayInputSchema = Type.Object({
 export const explainInputBase = Type.Object({
 	question: Type.String({
 		description:
-			"The single question to ask. ONE question per turn: ask, then end your turn — the answer determines the next.",
+			"The single question to ask. ONE question per turn: ask, then end your turn — the answer determines the next." + MD,
 	}),
 	correctAnswer: Type.String({
 		description:
 			"REQUIRED. The full correct answer in your own words, reasoning included — COMMITTED before the learner " +
 			"ever sees the question. The commitment is immutable: when his answer returns, grade it strictly against this " +
 			"text — never revise the commitment after seeing his words, and never mark a wrong answer right to be kind. " +
-			"It is shown to him on submit; your next reply grades the nuance of what he wrote.",
+			"It is shown to him on submit; your next reply grades the nuance of what he wrote." + MD,
 	}),
 	details: Type.Optional(
-		Type.String({ description: "Optional extra context or instructions shown under the question." }),
+		Type.String({ description: "Optional extra context or instructions shown under the question." + MD }),
 	),
 });
 
@@ -370,10 +375,10 @@ export const askInputSchema = Type.Object({
 	// knob for the model to misuse.
 	question: Type.String({
 		description:
-			"The single question to ask the learner. ONE question per turn: ask, then end your turn — the answer determines the next question.",
+			"The single question to ask the learner. ONE question per turn: ask, then end your turn — the answer determines the next question." + MD,
 	}),
 	details: Type.Optional(
-		Type.String({ description: "Optional extra context or instructions shown under the question." }),
+		Type.String({ description: "Optional extra context or instructions shown under the question." + MD }),
 	),
 	options: Type.Optional(
 		Type.Array(Type.Object(askOptionProps), {
