@@ -168,6 +168,8 @@ const ACTIVITY_LABELS: Record<string, string> = {
 	demo: "Building a demo…",
 	visual: "Making a visual…",
 	pdf: "Reading a PDF…",
+	show_image: "Showing an image…",
+	html_preview: "Writing an HTML preview…",
 	plan_init: "Drawing up the plan…",
 	probe_done: "Concluding the assessment…",
 };
