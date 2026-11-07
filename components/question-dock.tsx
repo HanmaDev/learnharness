@@ -102,7 +102,7 @@ export interface QuestionDockProps {
 	compactionRunning?: boolean;
 	/** Fork: "Talk to the teacher" — set the question aside and send this
 	 *  message instead. Absent = no talk affordance (tests, old callers). */
-	onTalk?: (text: string) => void;
+	onTalk?: (text: string) => Promise<boolean> | boolean | void;
 }
 
 export function QuestionDock({
@@ -182,6 +182,7 @@ export function QuestionDock({
 						onOpenChange={setTalkOpen}
 						onTalk={onTalk}
 						disabled={compactionRunning}
+						dictationClaim={dictationClaim}
 					/>
 				)}
 			</div>

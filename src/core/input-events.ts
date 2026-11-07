@@ -229,8 +229,11 @@ export function inputAppends(
 	 *  left to key the notice) — the caller passes it; tests omit it. */
 	clearedTargetAt?: string,
 ): LhMessage[] {
-	// Fork: a learner-made target-date change rides the next learner input,
-	// once (after any tool results, so call/result adjacency holds).
+	// Fork: a learner-made target-date change rides the learner's next TEXT
+	// or interrupt, once — never an answer: an answer may leave a sibling
+	// question waiting (a marker between two results breaks provider
+	// adjacency), and an answer-only record must still end in its result
+	// for auto-continuation. plan_progress reports the date meanwhile.
 	const notice = (): LhMessage[] => {
 		const t = record.planTarget;
 		if (t?.setBy === "learner" && !planTargetAnnounced(record.messages, t.at)) return [newPlanTargetNotice(t, t.at)];
@@ -245,7 +248,7 @@ export function inputAppends(
 			if (!pending || pending.toolCallId !== input.toolCallId) {
 				throw new ChatInputError("answer input targets no pending question call");
 			}
-			return [newAnswerResult(input.toolCallId, pending.tool, input.answer), ...notice()];
+			return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
 		}
 		case "interrupt": {
 			const waiting = danglingQuestionsOf(record.messages);

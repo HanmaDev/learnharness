@@ -20,13 +20,18 @@ export function TalkToTeacher({
 	onOpenChange,
 	onTalk,
 	disabled = false,
+	dictationClaim = true,
 }: {
 	/** The dock is expanded — the shortcut is armed only then. */
 	active: boolean;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onTalk: (text: string) => void;
+	/** Resolves false when the send was refused — the text stays. */
+	onTalk: (text: string) => Promise<boolean> | boolean | void;
 	disabled?: boolean;
+	/** The dock's dictation claim (false while a teach check sits unrevealed:
+	 *  the reading-thinking field owns speech then). */
+	dictationClaim?: boolean;
 }) {
 	const [text, setText] = useState("");
 	const textRef = useRef("");
@@ -38,7 +43,7 @@ export function TalkToTeacher({
 		textRef.current = v;
 		setText(v);
 	}, []);
-	useDictationTarget(append, open);
+	useDictationTarget(append, open && dictationClaim);
 	const ghost = useDictationGhost(append);
 
 	useEffect(() => {
@@ -65,7 +70,8 @@ export function TalkToTeacher({
 			await finishDictation(); // a spoken tail lands before we read the field
 			const message = textRef.current.trim();
 			if (!message) return;
-			onTalk(message);
+			const ok = await onTalk(message);
+			if (ok === false) return; // refused: keep the words, stay open
 			textRef.current = "";
 			setText("");
 			onOpenChange(false);

@@ -152,6 +152,17 @@ describe("plan tools — targetDate and plan_progress", () => {
 		assert.match(text(res as never), /Done 1\/2 nodes \(50%\)/);
 		assert.match(text(res as never), /No target date set/);
 	});
+
+	it("plan_progress counts earlier calls from the SAME turn (live agent messages)", async () => {
+		const chatId = newChat();
+		let live: LhMessage[] = [];
+		const tools = planTools({ chatId, chatStore, liveMessages: () => live });
+		await tools.plan_init!.execute("t1", { mermaid: "graph TD\n  a[A] --> b[B] --> c[C]" });
+		// The record has no turn messages yet; the live agent does.
+		live = [...chatStore.getChat(chatId)!.messages, ...call("plan_init", {}, T0), ...call("plan_progress", { done: ["a"] }, T0 + MIN)];
+		const res = await tools.plan_progress!.execute("p3", { done: ["b"] });
+		assert.match(text(res as never), /Done 2\/3 nodes \(67%\)/);
+	});
 });
 
 // ─── the target-date notice and the interrupt input ─────────────────────────
@@ -175,6 +186,20 @@ describe("learner target-date notice", () => {
 		assert.equal(teacher.length, 1);
 		const cleared = inputAppends({ messages: [] }, { type: "text", text: "x" }, "2026-11-07T11:00:00.000Z");
 		assert.match((cleared[0] as { content: string }).content, /removed this plan's target date/);
+	});
+
+	it("never rides an answer (a sibling may still wait; the record must end in the result)", () => {
+		const target = { date: "2026-11-20", setBy: "learner", at: "t1" };
+		const both = {
+			...quizCall("q1", "First?"),
+			content: [...(quizCall("q1", "First?") as { content: unknown[] }).content, ...(quizCall("q2", "Second?") as { content: unknown[] }).content],
+		} as unknown as LhMessage;
+		const answer = { kind: "quiz" as const, questionText: "First?", dontKnow: false, answers: [{ index: 0, label: "x" }], answeredAt: "t" };
+		const appends = inputAppends({ messages: [both], planTarget: target }, { type: "answer", toolCallId: "q1", answer: answer as never });
+		assert.deepEqual(appends.map((m) => m.role), ["toolResult"]);
+		// It still rides the interrupt, after every set-aside result.
+		const after = inputAppends({ messages: [both, ...appends], planTarget: target }, { type: "interrupt", text: "wait" });
+		assert.deepEqual(after.map((m) => m.role), ["toolResult", "custom", "user"]);
 	});
 
 	it("the notice reaches the model as text and stays out of the view", () => {

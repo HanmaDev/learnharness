@@ -21,6 +21,10 @@ export interface PlanToolContext {
 	chatId: string;
 	/** The storage port plan tools persist through. */
 	chatStore: ChatStore;
+	/** Fork: the running agent's messages (record + this turn so far). The
+	 *  record is persisted only at turn end, so without this an earlier
+	 *  plan_progress/plan_init in the same turn would be invisible. */
+	liveMessages?: () => readonly LhMessage[];
 }
 
 /**
@@ -146,9 +150,11 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 					timestamp: Date.now(),
 				} as unknown as LhMessage;
 				const result: LhMessage = { id: "plan_progress_now_r", role: "toolResult", toolCallId: "now", toolName: "plan_progress", content: [], isError: false, timestamp: Date.now() } as unknown as LhMessage;
+				const live = ctx.liveMessages?.() ?? [];
+				const base = live.length >= record.messages.length ? live : record.messages;
 				const progress = computePlanProgress({
 					tree,
-					messages: [...record.messages, synthetic, result],
+					messages: [...base, synthetic, result],
 					target: record.planTarget ?? null,
 					now: Date.now(),
 				});

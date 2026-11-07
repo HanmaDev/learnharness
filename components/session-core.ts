@@ -790,7 +790,9 @@ export class SessionModel {
 			// existing setup recovery. A newer send/reattach ALWAYS owns errors
 			// and status instead, even if that request has since been stopped.
 			// Ordinary text and answer teardown behavior stays unchanged.
-			if (input.type === "answer") {
+			if (input.type === "answer" || input.type === "interrupt") {
+				// Fork: interrupt's set-aside results roll back like an answer's —
+				// the server kept the question waiting.
 				const ids = new Set(optimistic.map(m => m.id));
 				this.mutate(() => {
 					this.tail = this.tail.filter(m => !ids.has(m.id));

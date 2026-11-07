@@ -1787,8 +1787,8 @@ export function Chat({
 					onTalk={(text) => {
 						// Fork: "Talk to the teacher" — every waiting question is set
 						// aside (the teacher reads why) and the message runs a turn.
-						if (!pending) return;
-						void send({ type: "interrupt", text });
+						if (!pending) return false;
+						return send({ type: "interrupt", text });
 					}}
 					onSubmitAnswer={(output) => {
 						if (!pending) return;
@@ -2037,7 +2037,7 @@ function DockOverlay({
 	composer: React.ReactNode;
 	onSubmitAnswer: (output: QuestionAnswerData) => void;
 	/** Fork: "Talk to the teacher" from a waiting question. */
-	onTalk?: (text: string) => void;
+	onTalk?: (text: string) => Promise<boolean> | boolean | void;
 	/** The model control's pass-through (the stats bar hosts it). */
 	chatId: string;
 	onModelChange: (model: string | undefined) => void;
