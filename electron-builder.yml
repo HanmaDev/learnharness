@@ -187,8 +187,11 @@ publish:
   # from a private repo are impossible, and a token baked into the app
   # would be a leak. desktop:dist passes no --publish flag, so builds never
   # upload; publishing happens at release time (GH_TOKEN + --publish).
+  # FORK: the feed is the fork's own releases, so upstream releases never
+  # auto-install over fork builds. Pull upstream changes via the `upstream`
+  # git remote instead.
   - provider: github
-    owner: amosblomqvist
+    owner: HanmaDev
     repo: learnharness
     # All three CI jobs contribute assets; only the owner publishes it.
     releaseType: draft
