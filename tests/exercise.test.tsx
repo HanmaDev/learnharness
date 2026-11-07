@@ -49,7 +49,7 @@ describe("exercise — validation", () => {
 	it("rejects authoring errors with fixable messages", () => {
 		assert.match(exerciseInputProblems({ ...blanks, blanks: [{ accept: ["WHERE"] }] }).join(), /1 entry but the template has 2 gap/);
 		assert.match(exerciseInputProblems({ ...blanks, template: "{{2}} then {{1}}" }).join(), /numbered \{\{1\}\}\.\.\{\{2\}\} in reading order/);
-		assert.match(exerciseInputProblems({ ...order, steps: ["a", "a"] }).join(), /distinct/);
+		assert.match(exerciseInputProblems({ ...order, steps: ["a", "a", "b"] }).join(), /distinct/);
 		assert.match(exerciseInputProblems({ ...mistake, mistakeLine: 9 }).join(), /outside 1\.\.4/);
 		assert.match(exerciseInputProblems({ ...match, pairs: [{ left: "a", right: "x" }, { left: "a", right: "y" }, { left: "b", right: "z" }] }).join(), /left sides must be distinct/);
 	});

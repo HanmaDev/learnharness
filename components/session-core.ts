@@ -705,7 +705,7 @@ export class SessionModel {
 			// The practice submissions (2026-10-04): the marker lands
 			// optimistically — the card renders from its details the
 			// moment the button fires.
-			optimistic.push({ ...newThinkingMessage(input.problemCallId, input.text), id: localId() });
+			optimistic.push({ ...newThinkingMessage(input.problemCallId, input.text, input.images?.map((snapshotId) => ({ snapshotId }))), id: localId() });
 		} else if (input.type === "next") {
 			// The move-on signal (owner round 16): the NEXT PROBLEM line
 			// renders the instant the chip/Enter fires.

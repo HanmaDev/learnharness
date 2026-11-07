@@ -59,6 +59,9 @@ export function FilePathDropZone({ children, className }: { children: React.Reac
 				event.preventDefault();
 				event.stopPropagation();
 				clearDrag();
+				// Fork: a photo area (practice / question boxes) took the images itself.
+				if (event.target instanceof Element && event.target.closest("[data-photo-drop]")
+					&& Array.from(event.dataTransfer.files).some((f) => f.type.startsWith("image/"))) return;
 				const resolve = window.lh?.getPathForFile;
 				if (!resolve) { setNotice(BROWSER_NOTICE); return; }
 				// Inspect only the dropped item's type, never traverse its entries.

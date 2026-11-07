@@ -119,22 +119,8 @@ const GRADIENT_H = 96;
 const COLLAPSE_DIST = 96;
 const EXPAND_DIST = 16;
 
-/**
- * Server-sync channel for artifact renderers: the CENTRAL jobs poll in Chat
- * calls syncFromServer() when a background job settles — the wake turn's
- * steer + response are already persisted by then, so fresh messages replace
- * local state in one pull. sendText feeds the demo error-fix loop.
- * (contracts.ts "THE ASYNC PROTOCOL" §4.)
- */
-export const ChatActionsContext = createContext<{
-	chatId: string;
-	syncFromServer: () => Promise<void>;
-	/** Send a user message into the session (demo error-fix loop, W6). */
-	sendText: (text: string) => void;
-	/** Opens the model setup dialog (BYOK, 2026-09-22): refused job cards
-	 *  deep-link into the same SetupDialog the send interception uses. */
-	openSetup: () => void;
-} | null>(null);
+export { ChatActionsContext } from "@/components/chat-actions-context";
+import { ChatActionsContext } from "@/components/chat-actions-context";
 
 /** The BYOK refusal envelope from the transport's error text: the
  *  DefaultChatTransport throws the 503 body VERBATIM as the error message,
@@ -502,10 +488,10 @@ export function Chat({
 	// the dock stays mounted (the problem is still active until the agent
 	// concludes).
 	const submitThinking = useCallback(
-		(text: string) => {
+		(text: string, images?: string[]) => {
 			const problem = activeProblemRef.current;
 			if (!problem) return;
-			void send({ type: "thinking", problemCallId: problem.toolCallId, text });
+			void send({ type: "thinking", problemCallId: problem.toolCallId, text, ...(images?.length ? { images } : {}) });
 		},
 		[send],
 	);
@@ -2047,7 +2033,7 @@ function DockOverlay({
 	practicePosedAt?: number;
 	practiceHints?: number;
 	/** (commit, text) — the practice dock's two submit lanes. */
-	onSubmitThinking: (text: string) => void;
+	onSubmitThinking: (text: string, images?: string[]) => void;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
 	requiresReveal: boolean;
 	/** The reading-thinking draft (owner 2026-10-03) — owned by ChatView so

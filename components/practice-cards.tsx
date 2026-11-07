@@ -1,5 +1,6 @@
 "use client";
 
+import { PhotoStrip } from "@/components/photo-attach";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
 import type { ArtifactPartProps } from "@/src/core";
@@ -338,5 +339,14 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 	// 50%-italic quote block on expand. Legacy records' commit flag is
 	// deliberately unread (one lane now). A TRANSCRIPT row (owner round,
 	// 2026-10-07): full-width band + rail, arriving expanded.
-	return <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />;
+	// Fork: photos of handwritten work ride the submission.
+	const ids = Array.isArray((data as { images?: unknown }).images)
+		? ((data as unknown as { images: Array<{ snapshotId?: unknown }> }).images.map((i) => i.snapshotId).filter((id): id is string => typeof id === "string"))
+		: [];
+	return (
+		<>
+			<ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />
+			<PhotoStrip ids={ids} />
+		</>
+	);
 }

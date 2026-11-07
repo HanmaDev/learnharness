@@ -12,6 +12,7 @@ import { ToolContentResponse } from "@/components/ai-elements/message";
 import { MarkdownInsideControl } from "@/components/md-blocks";
 import { TalkToTeacher } from "@/components/talk-to-teacher";
 import { ExerciseForm } from "@/components/exercise-form";
+import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { cn } from "@/lib/utils";
 import {
 	buildAnswer,
@@ -324,6 +325,8 @@ function QuestionDockForm({
 	compactionRunning = false,
 }: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
 	const kind = toolQuestionKind(toolName);
+	// Fork: photos of handwritten work (paste / drag / attach / phone).
+	const photos = usePhotoAttachments();
 
 	// Canonical QuestionData, built once per question. Quiz options are
 	// deterministically shuffled (seeded by toolCallId) so position never leaks
@@ -451,7 +454,7 @@ function QuestionDockForm({
 		void finishDictation().then(doSubmit);
 	};
 	const doSubmit = () => {
-		if (!canSubmit) return;
+		if (!canSubmit || photos.uploading) return;
 		const req: AnswerRequest = {
 			dontKnow: sel.dontKnow,
 			values: [...sel.selected].map((i) => qd.options[i]!.value),
@@ -471,7 +474,10 @@ function QuestionDockForm({
 			text: answerTextRef.current,
 			confidenceIndex: confIdx,
 		});
-		onSubmit(buildAnswer(qd, req, toolName));
+		const built = buildAnswer(qd, req, toolName);
+		// Fork: photos of handwritten work ride the answer.
+		if (photos.ids.length) built.images = photos.ids;
+		onSubmit(built);
 	};
 
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): the same
@@ -911,6 +917,7 @@ function QuestionDockForm({
 			>
 				<div
 					data-testid={qd.mode === "text" ? "answer-field" : "thinking-field"}
+					{...photos.areaProps}
 					className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 				>
 					<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -992,6 +999,7 @@ function QuestionDockForm({
 							Submit answer
 						</Button>
 					</div>
+					<PhotoTray attach={photos} disabled={compactionRunning} />
 				</div>
 			</form>
 		</div>

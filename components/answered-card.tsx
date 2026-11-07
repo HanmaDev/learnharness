@@ -1,6 +1,7 @@
 "use client";
 
 import { ExerciseAnsweredBody, ExerciseSolution } from "@/components/exercise-form";
+import { PhotoStrip } from "@/components/photo-attach";
 import { parseExerciseInput } from "@/src/core";
 import { useState } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
@@ -112,6 +113,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 			)}
 			{isExercise && exerciseInput && answer.exercise && <ExerciseAnsweredBody input={exerciseInput} answer={answer.exercise} />}
 			{isExercise && exerciseInput && !answer.exercise && answer.dontKnow && <ExerciseSolution input={exerciseInput} />}
+			{Array.isArray(savedAnswer.images) && savedAnswer.images.length > 0 && <PhotoStrip ids={savedAnswer.images} />}
 
 			{((answer.options?.length ?? 0) > 0 || answer.other) && (
 				<div className="flex flex-col gap-1.5 text-sm">

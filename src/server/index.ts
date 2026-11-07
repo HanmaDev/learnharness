@@ -13,6 +13,7 @@ export * from "./source-deletion.ts";
 export { NotesImportError } from "../agent/subagents/extraction.ts";
 export { convertPdf } from "../agent/subagents/pdf-ops.ts";
 export { normalizeImageBytes } from "../agent/tools/learner-image.ts";
+export { cancelPhoneUpload, phoneUploadStatus, startPhoneUpload } from "./phone-upload.ts";
 export { joinPages } from "../agent/subagents/pdf-markdown.ts";
 export * from "./commit-positions.ts";
 export * from "./jobs.ts";

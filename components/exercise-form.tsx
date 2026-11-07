@@ -20,6 +20,7 @@ import {
 	type QuestionAnswerData,
 } from "@/src/core";
 import { cn } from "@/lib/utils";
+import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 
 /**
  * Fork (2026-11-07): the `exercise` question's form — blanks, order,
@@ -66,6 +67,7 @@ export function ExerciseForm({
 	const thinkingRef = useRef(draft?.thinking ?? "");
 	const submittingRef = useRef(false);
 	const rootRef = useRef<HTMLDivElement>(null);
+	const photos = usePhotoAttachments();
 	useEffect(() => {
 		drafts.set(toolCallId, { response, dontKnow, confIdx, thinking });
 	}, [toolCallId, response, dontKnow, confIdx, thinking]);
@@ -102,17 +104,17 @@ export function ExerciseForm({
 	const canSubmit = complete && !compactionRunning;
 
 	const submit = async () => {
-		if (!canSubmit || submittingRef.current) return;
+		if (!canSubmit || submittingRef.current || photos.uploading) return;
 		submittingRef.current = true;
 		try {
 			if (isDictationActive()) await finishDictation();
-			onSubmit(
-				buildExerciseAnswer(
-					input,
-					{ response: dontKnow ? null : response, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
-					toolName,
-				),
+			const answer = buildExerciseAnswer(
+				input,
+				{ response: dontKnow ? null : response, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
+				toolName,
 			);
+			if (photos.ids.length) answer.images = photos.ids;
+			onSubmit(answer);
 		} finally {
 			// A refused send keeps the form (and its draft) usable for a retry.
 			submittingRef.current = false;
@@ -198,7 +200,7 @@ export function ExerciseForm({
 					void submit();
 				}}
 			>
-				<div className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50">
+				<div {...photos.areaProps} className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50">
 					<div className="px-2.5 pt-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 						{input.format === "find-mistake" ? "Why is it wrong?" : "Your thinking"}
 					</div>
@@ -235,6 +237,7 @@ export function ExerciseForm({
 							Submit
 						</button>
 					</div>
+					<PhotoTray attach={photos} disabled={compactionRunning} />
 				</div>
 				<div className="px-1 pt-1 text-[11px] text-muted-foreground/70">
 					{compactionRunning ? "Compacting context — submit when it finishes." : complete ? "Ctrl+Enter submits" : HINT[input.format]}

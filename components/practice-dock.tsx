@@ -8,6 +8,7 @@ import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
 import { useDictationGhost } from "@/components/dictation-state";
+import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { cn } from "@/lib/utils";
 
 /**
@@ -43,8 +44,9 @@ export interface PracticeDockProps {
 	/** Collapse state, owned by the DockOverlay. */
 	expanded: boolean;
 	onExpand: () => void;
-	/** text — POST {type:"thinking"} (one lane; the register is read from the text). */
-	onSubmit: (text: string) => void;
+	/** text — POST {type:"thinking"} (one lane; the register is read from the text).
+	 *  Fork: `images` = snapshot ids of attached photos of handwritten work. */
+	onSubmit: (text: string, images?: string[]) => void;
 	/** Escape in the thinking field stops dictation (threaded from the page). */
 	onEscape?: () => void;
 	/** Compaction is running for this chat (owner round 14): the thinking
@@ -86,6 +88,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 		return () => clearInterval(id);
 	}, [timerOn]);
 	const elapsed = now - startRef.current;
+	const photos = usePhotoAttachments();
 	const remaining = limitMin !== null ? limitMin * 60_000 - elapsed : null;
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
@@ -107,13 +110,16 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 	const submit = () => {
 		if (compactionRunning) return;
 		const text = thinkingRef.current.trim();
-		if (text.length === 0) return;
+		const images = photos.ids;
+		if (text.length === 0 && images.length === 0) return;
+		if (photos.uploading) return;
 		thinkingRef.current = "";
 		setThinking("");
+		photos.clear();
 		// Fork: tag the part and the elapsed time so the teacher can grade
 		// per part and report time.
 		const tags = [parts ? `(${parts[partIdx]!.label})` : "", `[elapsed ${formatClock(Date.now() - startRef.current)}]`].filter(Boolean).join(" ");
-		onSubmit(`${tags}\n${text}`);
+		onSubmit(`${tags}\n${text || "(photo of my work)"}`, images.length ? images : undefined);
 	};
 	const askHint = () => {
 		if (compactionRunning) return;
@@ -242,6 +248,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 			    Shift+Enter makes a newline — less to decide about. */}
 			<div
 				data-testid="practice-thinking-field"
+				{...photos.areaProps}
 				className="m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 			>
 				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -270,7 +277,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 							submit();
 						}
 					}}
-					placeholder="Work here, think out loud."
+					placeholder="Work here, think out loud — or paste/drag a photo of your written work."
 					className={cn(
 						"field-sizing-content lh-input max-h-64 min-h-16 w-full resize-none bg-transparent px-2.5 pb-2 outline-none placeholder:text-muted-foreground",
 					)}
@@ -279,6 +286,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 				    question dock's — hint left, the SAME Button (h-9, px-3.5),
 				    one p-1 row. Corner radii concentric: shell 16 − m-1.5 (6) =
 				    field 10 − p-1 (4) = button 6. */}
+				<PhotoTray attach={photos} disabled={compactionRunning} />
 				<div className="flex items-center justify-between gap-2 p-1">
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 						{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
@@ -286,7 +294,7 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={thinking.trim().length === 0 || compactionRunning}
+						disabled={(thinking.trim().length === 0 && photos.ids.length === 0) || photos.uploading || compactionRunning}
 						onClick={() => submit()}
 						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
 					>
