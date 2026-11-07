@@ -17,6 +17,16 @@ import { cn } from "@/lib/utils";
 
 export const MAX_PHOTOS = 4;
 
+/** How many trays currently hold each photo — a removal deletes the
+ *  server copy only when no other tray still has it. */
+const holders = new Map<string, number>();
+const hold = (id: string, delta: number) => {
+	const n = (holders.get(id) ?? 0) + delta;
+	if (n <= 0) holders.delete(id);
+	else holders.set(id, n);
+	return n;
+};
+
 export interface AttachedPhoto {
 	snapshotId: string;
 	/** A local preview (object URL) until the snapshot loads. */
@@ -31,9 +41,16 @@ export function usePhotoAttachments() {
 	const photosRef = useRef(photos);
 	photosRef.current = photos;
 
-	useEffect(() => () => { for (const p of photosRef.current) if (p.preview) URL.revokeObjectURL(p.preview); }, []);
+	useEffect(() => () => {
+		for (const p of photosRef.current) {
+			if (p.preview) URL.revokeObjectURL(p.preview);
+			hold(p.snapshotId, -1);
+		}
+	}, []);
 
 	const addSnapshot = useCallback((snapshotId: string, preview?: string) => {
+		if (photosRef.current.some((p) => p.snapshotId === snapshotId) || photosRef.current.length >= MAX_PHOTOS) return;
+		hold(snapshotId, 1);
 		setPhotos((list) => (list.some((p) => p.snapshotId === snapshotId) || list.length >= MAX_PHOTOS ? list : [...list, { snapshotId, preview }]));
 	}, []);
 
@@ -77,18 +94,23 @@ export function usePhotoAttachments() {
 
 	/** `discard`: the learner removed it (not sent) — the server drops it if unused. */
 	const remove = useCallback((snapshotId: string, discard = false) => {
+		if (!photosRef.current.some((p) => p.snapshotId === snapshotId)) return;
+		const stillHeld = hold(snapshotId, -1) > 0;
 		setPhotos((list) => {
 			const gone = list.find((p) => p.snapshotId === snapshotId);
 			if (gone?.preview) URL.revokeObjectURL(gone.preview);
 			return list.filter((p) => p.snapshotId !== snapshotId);
 		});
-		if (discard && chatId) {
+		if (discard && chatId && !stillHeld) {
 			void fetch(`/api/chats/${encodeURIComponent(chatId)}/upload-image?snapshot=${snapshotId}`, { method: "DELETE" }).catch(() => {});
 		}
 	}, [chatId]);
 
 	const clear = useCallback(() => {
-		for (const p of photosRef.current) if (p.preview) URL.revokeObjectURL(p.preview);
+		for (const p of photosRef.current) {
+			if (p.preview) URL.revokeObjectURL(p.preview);
+			hold(p.snapshotId, -1);
+		}
 		setPhotos([]);
 		setError(null);
 	}, []);

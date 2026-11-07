@@ -324,7 +324,7 @@ export interface SqlKeyedQuery {
 	sql: string;
 	/** Per sort key: an appended column (index after the original columns) or
 	 *  a 1-based output position (ORDER BY 2). */
-	keys: Array<{ appended: number } | { position: number }>;
+	keys: Array<({ appended: number } | { position: number }) & { nocase?: boolean }>;
 }
 
 /**
@@ -349,18 +349,42 @@ export function sqlWithOrderKeys(referenceSql: string): SqlKeyedQuery | null {
 	const keysStart = orderStart + orderMatch[0].length;
 	const limit = /\blimit\b/.exec(lower.slice(keysStart));
 	const keysEnd = limit ? keysStart + limit.index : sql.length;
-	const keyExprs = splitTopLevel(sql.slice(keysStart, keysEnd)).map((k) =>
-		k.replace(/\s+collate\s+\w+/i, "").replace(/\s+nulls\s+(first|last)\s*$/i, "").replace(/\s+(asc|desc)\s*$/i, "").trim(),
-	);
+	// Each key: strip trailing ASC/DESC, NULLS FIRST/LAST and a trailing
+	// COLLATE (NOCASE keys compare case-folded, as SQLite ties them).
+	const keyExprs = splitTopLevel(sql.slice(keysStart, keysEnd)).map((raw) => {
+		let k = raw.replace(/\s+nulls\s+(first|last)\s*$/i, "").replace(/\s+(asc|desc)\s*$/i, "").trim();
+		let nocase = false;
+		const collate = /\s+collate\s+(\w+)\s*$/i.exec(k);
+		if (collate) {
+			nocase = collate[1]!.toLowerCase() === "nocase";
+			k = k.slice(0, collate.index).trim();
+		}
+		return { expr: k, nocase };
+	});
 	if (keyExprs.length === 0) return null;
 	const fromMatch = /\bfrom\b/.exec(lower.slice(select));
 	const insertAt = fromMatch ? select + fromMatch.index : orderStart;
+	// Select-list aliases: in ORDER BY a bare name means the ALIAS first, so a
+	// key naming an alias must read that output column (appending "(name)"
+	// would resolve to a source column of the same name, or fail).
+	const listText = sql.slice(select + 6, insertAt);
+	const items = splitTopLevel(listText);
+	const aliasPos = new Map<string, number>();
+	const hasStar = items.some((it) => /(^|\.)\*$/.test(it.trim()));
+	items.forEach((it, i) => {
+		const m = /(?:\bas\s+)?("?)([a-z_][\w]*)\1\s*$/i.exec(it);
+		if (m && it.trim().length > m[0].trim().length) aliasPos.set(m[2]!.toLowerCase(), i + 1);
+	});
 	const keys: SqlKeyedQuery["keys"] = [];
 	const added: string[] = [];
-	for (const expr of keyExprs) {
-		if (/^\d+$/.test(expr)) keys.push({ position: Number(expr) });
-		else {
-			keys.push({ appended: added.length });
+	for (const { expr, nocase } of keyExprs) {
+		const bare = /^"?([a-z_][\w]*)"?$/i.exec(expr)?.[1]?.toLowerCase();
+		if (/^\d+$/.test(expr)) keys.push({ position: Number(expr), nocase });
+		else if (bare && aliasPos.has(bare)) {
+			if (hasStar) return null; // positions unknowable after a *
+			keys.push({ position: aliasPos.get(bare)!, nocase });
+		} else {
+			keys.push({ appended: added.length, nocase });
 			added.push(`(${expr}) AS __lh_k${added.length}`);
 		}
 	}
@@ -382,7 +406,12 @@ export function sqlMatchesWithTies(
 ): boolean {
 	if (got.columns.length !== visibleColumns || got.rows.length !== keyed.rows.length) return false;
 	const keyOf = (row: SqlCell[]) =>
-		JSON.stringify(keys.map((k) => ("appended" in k ? row[visibleColumns + k.appended] : row[k.position - 1]) ?? null));
+		JSON.stringify(
+			keys.map((k) => {
+				const v = ("appended" in k ? row[visibleColumns + k.appended] : row[k.position - 1]) ?? null;
+				return k.nocase && typeof v === "string" ? v.toLowerCase() : v;
+			}),
+		);
 	const cell = (v: SqlCell): string => (v === null ? "\u0000NULL" : typeof v === "number" ? `n:${Number(v.toPrecision(12))}` : `s:${String(v).trim()}`);
 	const rowKey = (row: SqlCell[]) => JSON.stringify(row.slice(0, visibleColumns).map(cell));
 	let i = 0;

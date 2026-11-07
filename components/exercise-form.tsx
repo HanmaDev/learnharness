@@ -27,7 +27,7 @@ import { mathEquivalent } from "@/components/math-check";
 import { describeSchema, runSql, type SqlRun } from "@/components/sql-runner";
 import { buildDemoSrcDoc, INITIAL_DEMO_BRIDGE_STATE, reduceDemoBridgeState, type DemoBridgeState } from "@/components/artifacts/demo-card";
 import { htmlPreviewDocument } from "@/components/artifacts/html-preview-card";
-import { sqlMatchesWithTies, sqlVerdict, sqlWithOrderKeys, type SqlCell } from "@/src/core";
+import { sqlMatchesWithTies, sqlResultsMatch, sqlVerdict, sqlWithOrderKeys, type SqlCell } from "@/src/core";
 
 /**
  * Fork (2026-11-07): the `exercise` question's form — blanks, order,
@@ -307,7 +307,10 @@ async function gradeSqlResponse(input: ExerciseToolInput, query: string): Promis
 	if (ref.ok && verdict.orderUnverified) {
 		const keyed = sqlWithOrderKeys(input.referenceSql ?? "");
 		const keyedRun = keyed ? await runSql(setup, keyed.sql) : null;
-		if (keyed && keyedRun?.ok) verdict = { matched: sqlMatchesWithTies(keyedRun, keyed.keys, ref.columns.length, got) };
+		// Guard (review): the rerun must return the SAME rows as the reference
+		// (a tie at a LIMIT cut may pick another row) — else keep the verdict.
+		const sameRows = keyedRun?.ok && sqlResultsMatch(ref, { columns: ref.columns, rows: keyedRun.rows.map((r) => r.slice(0, ref.columns.length)) }, false);
+		if (keyed && keyedRun?.ok && sameRows) verdict = { matched: sqlMatchesWithTies(keyedRun, keyed.keys, ref.columns.length, got) };
 	}
 	return { format: "sql", query, ...verdict, columns: got.columns, rows: got.rows.slice(0, MAX_SHOWN_ROWS), expectedRows: ref.ok ? ref.rows.length : undefined };
 }

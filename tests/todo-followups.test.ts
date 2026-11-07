@@ -25,11 +25,11 @@ describe("sqlWithOrderKeys — the reference also returns its sort keys", () => 
 	it("appends key expressions before the top-level FROM, keeping the ORDER BY", () => {
 		const k = sqlWithOrderKeys("SELECT name FROM e ORDER BY dept, age DESC;")!;
 		assert.equal(k.sql, "SELECT name, (dept) AS __lh_k0, (age) AS __lh_k1 FROM e ORDER BY dept, age DESC");
-		assert.deepEqual(k.keys, [{ appended: 0 }, { appended: 1 }]);
+		assert.deepEqual(k.keys, [{ appended: 0, nocase: false }, { appended: 1, nocase: false }]);
 	});
 
 	it("positional keys read the output column; subqueries and strings are skipped", () => {
-		assert.deepEqual(sqlWithOrderKeys("SELECT name, age FROM e ORDER BY 2")!.keys, [{ position: 2 }]);
+		assert.deepEqual(sqlWithOrderKeys("SELECT name, age FROM e ORDER BY 2")!.keys, [{ position: 2, nocase: false }]);
 		const nested = sqlWithOrderKeys("SELECT name FROM (SELECT * FROM e ORDER BY age) t WHERE name <> 'from' ORDER BY dept")!;
 		assert.match(nested.sql, /^SELECT name, \(dept\) AS __lh_k0 FROM \(SELECT \* FROM e ORDER BY age\) t/);
 	});
@@ -62,6 +62,32 @@ describe("tie-aware ordered comparison (real SQLite)", () => {
 		assert.equal(sqlMatchesWithTies({ columns: s.columns, rows: s.values }, strict.keys, 1, got(["Zoe", "Ivo", "Ana", "Mia"])), false);
 		assert.equal(sqlMatchesWithTies({ columns: s.columns, rows: s.values }, strict.keys, 1, got(["Ivo", "Zoe", "Ana", "Mia"])), true);
 		db.close();
+	});
+});
+
+describe("review fixes: aliases and COLLATE NOCASE", () => {
+	it("an ORDER BY alias reads its output column, even when it shadows a source column", async () => {
+		const SQL = await sqlite();
+		const db = new SQL.Database();
+		db.exec("CREATE TABLE p(name TEXT, price INT, qty INT); INSERT INTO p VALUES ('a',5,1),('B',5,3),('c',2,1);");
+		const k = sqlWithOrderKeys("SELECT name, price*qty AS price FROM p ORDER BY price")!;
+		assert.deepEqual(k.keys, [{ position: 2, nocase: false }]);
+		const run = db.exec(k.sql)[0]!;
+		const keyed = { columns: run.columns, rows: run.values };
+		const got = (rows: Array<[string, number]>) => ({ columns: ["name", "price"], rows });
+		assert.equal(sqlMatchesWithTies(keyed, k.keys, 2, got([["c", 2], ["a", 5], ["B", 15]])), true);
+		assert.equal(sqlMatchesWithTies(keyed, k.keys, 2, got([["c", 2], ["B", 15], ["a", 5]])), false, "5 and 15 are not a tie");
+		const agg = sqlWithOrderKeys("SELECT dept, COUNT(*) AS n FROM e GROUP BY dept ORDER BY n DESC")!;
+		assert.deepEqual(agg.keys, [{ position: 2, nocase: false }], "aggregate alias by position");
+		db.close();
+	});
+
+	it("COLLATE NOCASE keys tie case-insensitively", () => {
+		const k = sqlWithOrderKeys("SELECT name FROM t ORDER BY name COLLATE NOCASE")!;
+		assert.deepEqual(k.keys, [{ appended: 0, nocase: true }]);
+		const keyed = { columns: ["name", "__lh_k0"], rows: [["b", "b"], ["B", "B"], ["c", "c"]] as SqlCell[][] };
+		assert.equal(sqlMatchesWithTies(keyed, k.keys, 1, { columns: ["name"], rows: [["B"], ["b"], ["c"]] }), true);
+		assert.equal(sqlMatchesWithTies(keyed, k.keys, 1, { columns: ["name"], rows: [["c"], ["b"], ["B"]] }), false);
 	});
 });
 
