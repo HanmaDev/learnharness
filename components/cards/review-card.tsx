@@ -51,8 +51,11 @@ export function ReviewCard({
 	previews,
 	onRate,
 	busy,
+	notesHref,
 }: {
 	card: Card;
+	/** The step's section in the course notes. */
+	notesHref?: string;
 	/** When each rating brings the card back (ms). */
 	previews: Record<CardRating, number> | undefined;
 	onRate: (rating: CardRating, outcome: ReviewOutcome) => void;
@@ -92,7 +95,14 @@ export function ReviewCard({
 		<div data-testid="review-card" className="rounded-lg border border-border bg-card/40">
 			<div className="flex items-center justify-between border-b border-border px-6 py-3 font-ui text-xs uppercase tracking-widest text-muted-foreground">
 				<span>
-					Korak · {lat(card.nodeTitle ?? card.nodeId)}
+					Korak ·{" "}
+					{notesHref ? (
+						<a href={notesHref} title="Beleške za ovaj korak" className="underline-offset-4 hover:text-foreground hover:underline">
+							{lat(card.nodeTitle ?? card.nodeId)}
+						</a>
+					) : (
+						lat(card.nodeTitle ?? card.nodeId)
+					)}
 				</span>
 				<span>{card.status === "new" ? "Nova" : card.tool === "explain" ? "Slobodan odgovor" : card.tool === "exercise" ? "Vežba" : "Check"}</span>
 			</div>

@@ -109,6 +109,18 @@ export function nodeMessages(windows: ReadonlyArray<[number, number]>, messages:
 	return [...picked].sort((x, y) => x - y).map((i) => messages[i]!);
 }
 
+/** Keep sections under the file's "## N. step" headings: # / ## become ###. */
+export function demoteHeadings(md: string): string {
+	let fence = false;
+	return md
+		.split("\n")
+		.map((line) => {
+			if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+			return !fence && /^#{1,2}\s/.test(line) ? line.replace(/^#{1,2}\s/, "### ") : line;
+		})
+		.join("\n");
+}
+
 export type NoteStatus = "written" | "stale" | "pending" | "untaught";
 
 export interface NoteStepView {
@@ -120,11 +132,19 @@ export interface NoteStepView {
 	markdown: string | null;
 	updatedAt: string | null;
 	extras: NoteExtra[];
+	/** The teacher marked the step done (plan_progress). */
+	done: boolean;
 }
 
 /** The state of every step's section. `current` is the step being taught now
  *  (its section is written once the lesson moves on, or on request). */
-export function noteSteps(tree: PlanTree, messages: readonly LhMessage[], notes: CourseNotes | undefined, current: string | null): NoteStepView[] {
+export function noteSteps(
+	tree: PlanTree,
+	messages: readonly LhMessage[],
+	notes: CourseNotes | undefined,
+	current: string | null,
+	done: ReadonlySet<string> = new Set(),
+): NoteStepView[] {
 	const windows = nodeWindows(tree, messages);
 	return tree.nodes.map((n, i) => {
 		const w = windows.get(n.id);
@@ -138,9 +158,10 @@ export function noteSteps(tree: PlanTree, messages: readonly LhMessage[], notes:
 			number: i + 1,
 			title: toSerbianLatin(n.title),
 			status,
-			markdown: section?.markdown ?? null,
+			markdown: section ? demoteHeadings(section.markdown) : null,
 			updatedAt: section?.updatedAt ?? null,
 			extras: notes?.extras && Object.prototype.hasOwnProperty.call(notes.extras, n.id) ? notes.extras[n.id]! : [],
+			done: done.has(n.id),
 		};
 	});
 }

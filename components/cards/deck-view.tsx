@@ -170,7 +170,14 @@ function ReviewTab({ view, onReview, onShowAll }: { view: CourseCardsView; onRev
 					<span className="block h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${total ? (doneCount / total) * 100 : 0}%` }} />
 				</span>
 			</div>
-			<ReviewCard key={`${card.id}:${card.reps}`} card={card} previews={view.previews[card.id]} onRate={(r, o) => void rate(r, o)} busy={busy} />
+			<ReviewCard
+				key={`${card.id}:${card.reps}`}
+				card={card}
+				previews={view.previews[card.id]}
+				onRate={(r, o) => void rate(r, o)}
+				busy={busy}
+				notesHref={`/notes/${encodeURIComponent(view.chatId)}#step-${encodeURIComponent(card.nodeId)}`}
+			/>
 			<p className="mt-3 text-center font-ui text-[11px] text-muted-foreground/70">Tasteri 1–4 biraju ocenu · razmak ili Enter prihvata predlog</p>
 		</div>
 	);

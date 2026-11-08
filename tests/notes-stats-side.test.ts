@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { nodeMessages, nodeWindows, notesDocument, notesFileName, noteSteps, staleSteps } from "../src/core/notes.ts";
 import { openQuestionCallId, redactOpenQuestion, sideThreadTitle } from "../src/core/side-chat.ts";
-import { addStudySeconds, chatIdFromPath, emptyStudyLog, parseStudyLog } from "../src/core/study-time.ts";
+import { addStudySeconds, chatIdFromPath, emptyStudyLog, parseStudyLog, type StudyTimeLog } from "../src/core/study-time.ts";
 import { dailyStats, rangeDates, statsView, streaks } from "../src/core/stats.ts";
 import { parseSideAction } from "../src/server/side-chat.ts";
 import { localDate } from "../src/core/plan-progress.ts";
@@ -61,7 +61,7 @@ describe("topic notes", () => {
 		assert.equal(steps[0]!.title, "Prva tema");
 		assert.deepEqual(staleSteps(steps), ["a"]);
 		assert.deepEqual(staleSteps(steps, true), ["a", "b"]);
-		const lastA = (messages[nodeWindows(tree, messages).get("a")![0][1]] as { id: string }).id;
+		const lastA = (messages[nodeWindows(tree, messages).get("a")![0]![1]] as { id: string }).id;
 		const written = noteSteps(tree, messages, { sections: { a: { markdown: "Beleška A", coveredTo: lastA, updatedAt: "x" } } }, "b");
 		assert.equal(written[0]!.status, "written");
 		const doc = notesDocument("Veb dizajn", written);
@@ -122,7 +122,7 @@ describe("statistics", () => {
 		...call("plan_progress", { done: ["a", "b"] }, T0 + 2 * DAY),
 	];
 	const cards = { states: { k: { reviews: [{ at: new Date(T0 + 2 * DAY).toISOString(), rating: 1 as const }, { at: new Date(T0 + 2 * DAY + MIN).toISOString(), rating: 3 as const }] } } };
-	const study = { version: 1 as const, days: { [localDate(T0)]: { total: 600, chats: { c1: 600 } }, [localDate(T0 + 3 * DAY)]: { total: 30, chats: {} } } };
+	const study: StudyTimeLog = { version: 1, days: { [localDate(T0)]: { total: 600, chats: { c1: 600 } }, [localDate(T0 + 3 * DAY)]: { total: 30, chats: {} } } };
 
 	it("per day: questions, accuracy, first-time steps, reviews, study time", () => {
 		const d = dailyStats([{ id: "c1", messages: msgs, cards }], study);
@@ -144,5 +144,12 @@ describe("statistics", () => {
 		assert.equal(v.year.length, 53 * 7);
 		assert.equal(v.ranges.all.questions, 3);
 		assert.equal(new Date(v.year.at(-1)!.date).getDay(), 0, "grid ends on Sunday");
+	});
+});
+
+import { demoteHeadings } from "../src/server/notes.ts";
+describe("notes headings", () => {
+	it("# and ## become ### outside code fences", () => {
+		assert.equal(demoteHeadings("## A\ntext\n# B\n```\n## code\n```\n### C"), "### A\ntext\n### B\n```\n## code\n```\n### C");
 	});
 });

@@ -15,6 +15,8 @@ import { spawn } from "node:child_process";
 import { runSubagent } from "../agent/subagents/pi-run.ts";
 import { withBgLlmSlot } from "../agent/subagents/bg-llm-semaphore.ts";
 import {
+	deriveDoneNodes,
+	demoteHeadings,
 	derivePlanStatusesLh,
 	emit,
 	nodeMessages,
@@ -74,7 +76,7 @@ const lastError = new Map<string, string>();
 const debounce = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function notesView(chat: ChatRecord): CourseNotesView {
-	const steps = chat.tree ? noteSteps(chat.tree, chat.messages, chat.notes, currentStep(chat)) : [];
+	const steps = chat.tree ? noteSteps(chat.tree, chat.messages, chat.notes, currentStep(chat), deriveDoneNodes(chat.tree, chat.messages)) : [];
 	return {
 		chatId: chat.id,
 		courseTitle: courseTitleOf(chat),
@@ -90,8 +92,9 @@ The notes are what the student re-reads before the exam instead of scrolling the
 Keep every concept, definition, rule, example and piece of code that was taught for THIS step, organised and tidy:
 short paragraphs, **bold** key terms with one-line definitions, bullet lists for enumerations, fenced code blocks for code/HTML/SQL/CSS (verbatim), tables where they help.
 End with a "### Pitanja iz lekcije" section: each question the teacher asked for this step in bold, followed by the correct answer and the one-line reason (not the student's answer, not chit-chat).
-Leave out greetings, pacing talk, meta comments about the lesson, anything that belongs to other steps, and anything not actually taught. Do not invent material.
-Do NOT start with a heading for the step (the app adds it). Output only the Markdown body.`;
+Leave out greetings, pacing talk, the course plan or schedule, how the lessons will be run, meta comments about the lesson, anything that belongs to other steps, and anything not actually taught. Do not invent material.
+Do NOT start with a heading for the step (the app adds it). Subheadings: only ### and ####, never # or ##. Output only the Markdown body.`;
+
 
 function writerPrompt(chat: ChatRecord, step: NoteStepView, transcript: string, needTitle: boolean): string {
 	const node = chat.tree?.nodes.find((n) => n.id === step.id);
@@ -135,7 +138,7 @@ async function writeStep(chatId: string, stepId: string): Promise<void> {
 	if (!body) throw new Error("Prazne beleške.");
 	const coveredTo = (chat.messages[windows.at(-1)![1]] as { id?: string }).id ?? "";
 	stores.chatStore.updateNotes(chatId, (n) => {
-		(n.sections ??= {})[stepId] = { markdown: toSerbianLatin(body), coveredTo, updatedAt: new Date().toISOString() };
+		(n.sections ??= {})[stepId] = { markdown: demoteHeadings(toSerbianLatin(body)), coveredTo, updatedAt: new Date().toISOString() };
 		if (title && !n.courseTitle) n.courseTitle = title;
 	});
 	writeNotesFile(chatId);
@@ -218,3 +221,4 @@ export function revealNotesFile(chatId: string): boolean {
 }
 
 export type { CourseNotes };
+export { demoteHeadings };

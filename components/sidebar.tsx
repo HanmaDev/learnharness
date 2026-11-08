@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { DumbbellIcon, LayersIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { BarChart3Icon, DumbbellIcon, LayersIcon, NotebookTextIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -395,6 +395,23 @@ export function RenameRow({ chat, onCommit, onCancel }: { chat: ChatListItem; on
 export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
+/** Fork: a plain sidebar door (Beleške, Statistika). */
+function NavEntry({ href, label, icon, active, testid }: { href: string; label: string; icon: React.ReactNode; active: boolean; testid: string }) {
+	return (
+		<Link
+			href={href}
+			data-testid={testid}
+			className={cn(
+				"flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider transition-colors hover:bg-accent hover:text-foreground",
+				active ? "bg-accent text-foreground" : "text-muted-foreground",
+			)}
+		>
+			{icon}
+			{label}
+		</Link>
+	);
+}
+
 /** Fork (Kartice): the sidebar door to the decks, with today's due count. */
 function CardsEntry({ active }: { active: boolean }) {
 	const { data } = useCardsOverview();
@@ -748,6 +765,8 @@ function SessionsSidebar() {
 						<span className="sr-only">create a new practice session</span>
 					</button>
 					<CardsEntry active={pathname?.startsWith("/cards") ?? false} />
+					<NavEntry href="/notes" label="Beleške" icon={<NotebookTextIcon className="size-3" />} active={pathname?.startsWith("/notes") ?? false} testid="notes-entry" />
+					<NavEntry href="/stats" label="Statistika" icon={<BarChart3Icon className="size-3" />} active={pathname?.startsWith("/stats") ?? false} testid="stats-entry" />
 				</div>
 
 				<div className="mx-3 mb-2 flex items-center gap-2">

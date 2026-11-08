@@ -1,6 +1,7 @@
 "use client";
 
-import { CardsDueChip } from "@/components/cards/due-chip";
+import { SelectionAsk, SideChip, SidePanel, useSideThreads, type SideRequest } from "@/components/side-chat/side-panel";
+import { CardsDueChip, NotesChip } from "@/components/cards/due-chip";
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
 import { visibleQueuedSteers } from "@/components/session-core";
@@ -560,6 +561,11 @@ export function Chat({
 	const recordComposerText = useCallback((v: string) => {
 		textRef.current = v;
 	}, []);
+	// Fork (side chats): the side-question panel and its threads.
+	const [sideOpen, setSideOpen] = useState(false);
+	const [sideRequest, setSideRequest] = useState<SideRequest | null>(null);
+	const side = useSideThreads(chatId);
+	const sideThreads = side.data?.threads ?? [];
 	// Saved slot completeness is live, but the session's selected route
 	// comes from its own ordinary model control, never today's Strong pin.
 	const { catalog, configured, zeroKeys } = useModelSetup(initialConfigured);
@@ -1258,6 +1264,15 @@ export function Chat({
 		if (pending || compacting) return;
 		const t = textRef.current.trim();
 		if (!t) return;
+		// Fork (side chats): "/btw <question>" goes to the side panel, never
+		// to the teacher — works mid-turn too.
+		const btw = /^\/btw\s+([\s\S]+)$/i.exec(t);
+		if (btw) {
+			applyText("");
+			setSideOpen(true);
+			setSideRequest({ n: Date.now(), text: btw[1]!.trim() });
+			return;
+		}
 		if (busy) {
 			applyText("");
 			void steer(t);
@@ -1387,6 +1402,8 @@ export function Chat({
 </Hint>
 					)}
 					{kind !== "practice" && <CardsDueChip chatId={chatId} />}
+					{kind !== "practice" && planTree && <NotesChip chatId={chatId} />}
+					<SideChip count={sideThreads.filter((t) => !t.closed).length} active={sideOpen} onClick={() => setSideOpen((o) => !o)} />
 					{/* The extraction ring (owner-locked redesign, 2026-09-24): fills
 					    with uncovered vs the chunk threshold, pulses while a run is in
 					    flight, vanishes when the graph is off. Click → the exact
@@ -1815,6 +1832,21 @@ export function Chat({
 					/>
 				)}
 				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} progress={planProgress} onSetTarget={setPlanTargetDate} />}
+				{sideOpen && (
+					<SidePanel
+						chatId={chatId}
+						threads={sideThreads}
+						setThreads={(threads) => side.setData({ threads })}
+						onClose={() => setSideOpen(false)}
+						request={sideRequest}
+					/>
+				)}
+				<SelectionAsk
+					onAsk={(quote) => {
+						setSideOpen(true);
+						setSideRequest({ n: Date.now(), quote });
+					}}
+				/>
 				<AbortTurnDialog mode={abortAsk} onClose={() => setAbortAsk(null)} onConfirm={confirmAbort} busy={busy} />
 				</div>
 			</div>

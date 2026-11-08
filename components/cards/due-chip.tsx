@@ -1,8 +1,22 @@
 "use client";
 /** Kartice (fork): "12 za danas" in the course header — opens the deck. */
 import Link from "next/link";
-import { LayersIcon } from "lucide-react";
+import { LayersIcon, NotebookTextIcon } from "lucide-react";
 import { useCardsOverview } from "./use-cards";
+
+/** Fork (topic notes): the course header's door to its notes. */
+export function NotesChip({ chatId }: { chatId: string }) {
+	return (
+		<Link
+			href={`/notes/${encodeURIComponent(chatId)}`}
+			data-testid="notes-chip"
+			title="Beleške ovog kursa"
+			className="flex shrink-0 items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+		>
+			<NotebookTextIcon className="size-3.5 text-green-400" aria-hidden /> Beleške
+		</Link>
+	);
+}
 
 export function CardsDueChip({ chatId }: { chatId: string }) {
 	const { data } = useCardsOverview();
