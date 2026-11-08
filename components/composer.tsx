@@ -22,6 +22,9 @@ import { AttachFilesButton } from "@/components/attach-files-button";
  *  anything makes Enter a send again). Pure so the static-render harness
  *  can pin the decision (key events can't be simulated in
  *  renderToStaticMarkup). */
+/** How long after a turn starts an Enter/button "stop" is ignored. */
+export const STOP_GRACE_MS = 1500;
+
 export function enterAction(state: {
 	busy: boolean;
 	canSend: boolean;
@@ -144,9 +147,21 @@ export function Composer({
 	 *  empty-Enter share it. */
 	onNext?: () => void;
 }) {
+	// Fork (2026-11-08, the "it just stopped" bug): the Enter that sends a
+	// message clears the composer and starts the turn, so a second Enter
+	// right after it (a held key repeating, a double tap, dictation's own
+	// Enter) read as "stop" and killed the turn before it began. A stop by
+	// Enter or by the button is ignored for STOP_GRACE_MS after the turn
+	// starts; Esc (confirmed abort) is unaffected.
+	const busySince = useRef<number | null>(null);
+	if (busy && busySince.current === null) busySince.current = Date.now();
+	if (!busy) busySince.current = null;
 	const act = () => {
 		const action = enterAction({ busy, canSend, nextProblem });
-		if (action === "stop") onStop();
+		if (action === "stop") {
+			if (busySince.current !== null && Date.now() - busySince.current < STOP_GRACE_MS) return;
+			onStop();
+		}
 		else if (action === "send") onSend();
 		else if (action === "next") onNext?.();
 	};
