@@ -9,7 +9,6 @@ import { runSubmitAgent } from "../agent/subagents/submit-agent.ts";
 import { withBgLlmSlot } from "../agent/subagents/bg-llm-semaphore.ts";
 import {
 	emit,
-	MISTAKE_TYPES,
 	mistakeViews,
 	toSerbianLatin,
 	unanalysed,
@@ -28,7 +27,7 @@ const analysisSchema = Type.Object({
 	mistakes: Type.Array(
 		Type.Object({
 			id: Type.String({ description: "The mistake id you were given." }),
-			type: Type.Union(MISTAKE_TYPES.map((t) => Type.Literal(t)), {
+			type: Type.Union([Type.Literal("pojam"), Type.Literal("racun"), Type.Literal("nepaznja"), Type.Literal("citanje"), Type.Literal("predznanje"), Type.Literal("drugo")], {
 				description: "pojam = misunderstood concept; racun = calculation slip; nepaznja = careless; citanje = misread the question; predznanje = missing prerequisite; drugo = other.",
 			}),
 			whatWentWrong: Type.String({ description: "1-2 sentences: what exactly the learner got wrong and why, from their answer." }),

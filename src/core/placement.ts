@@ -34,7 +34,7 @@ export const PLACEMENT_QUESTION_KINDS = ["quiz", "short", "math"] as const;
 
 export const placementQuestionSchema = Type.Object({
 	id: Type.String({ minLength: 1, maxLength: 40, description: "Unique within the test, e.g. 'html-2'." }),
-	kind: Type.Union(PLACEMENT_QUESTION_KINDS.map((k) => Type.Literal(k)), {
+	kind: Type.Union([Type.Literal("quiz"), Type.Literal("short"), Type.Literal("math")], {
 		description: "quiz = multiple choice (app-graded); short = free short answer (YOU grade it from correctAnswer); math = a formula answer (app-graded, Wolfram when unsure).",
 	}),
 	question: Type.String({ minLength: 1, description: "Markdown; code in fenced blocks; math in $…$." }),
@@ -139,7 +139,7 @@ export const placementResultSchema = Type.Object({
 			id: Type.String({ description: "The topic id from placement_test." }),
 			title: Type.String(),
 			score: Type.Number({ minimum: 0, maximum: 100, description: "Percent right in this topic (your grading of short answers included)." }),
-			proposal: Type.Union(PLACEMENT_DECISIONS.map((d) => Type.Literal(d)), { description: "znam = already known (skip); ponoviti = known but shaky (quick review); ucim = learn from the start." }),
+			proposal: Type.Union([Type.Literal("znam"), Type.Literal("ponoviti"), Type.Literal("ucim")], { description: "znam = already known (skip); ponoviti = known but shaky (quick review); ucim = learn from the start." }),
 			note: Type.Optional(Type.String({ maxLength: 300, description: "One short line: what showed this." })),
 		}),
 		{ minItems: 1, maxItems: 25 },
