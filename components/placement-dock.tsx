@@ -32,6 +32,9 @@ import {
 
 const draftKey = (id: string) => `lh:placement:${id}`;
 
+/** "iz 2 teme", "iz 5 tema" — Serbian count agreement after "iz". */
+export const temaForm = (n: number) => (n % 100 >= 11 && n % 100 <= 14 ? "tema" : n % 10 >= 1 && n % 10 <= 4 ? "teme" : "tema");
+
 function askAnswer(questionText: string, text: string): QuestionAnswerData {
 	return { kind: "ask", questionText, dontKnow: false, answers: [], text, answeredAt: new Date().toISOString() } as QuestionAnswerData;
 }
@@ -61,7 +64,7 @@ export function PlacementDock({
 			<div className="min-w-0 flex-1">
 				<p className="font-ui text-xs uppercase tracking-widest text-muted-foreground">{isTest ? "Test znanja" : "Rezultat testa"}</p>
 				<p className="truncate text-sm text-foreground">
-					{isTest ? `${test.title} · ${total} pitanja iz ${test.topics.length} tema` : "Pogledaj rezultat po temama i potvrdi šta učimo."}
+					{isTest ? `${test.title} · ${total} pitanja iz ${test.topics.length} ${temaForm(test.topics.length)}` : "Pogledaj rezultat po temama i potvrdi šta učimo."}
 				</p>
 			</div>
 			<button
@@ -330,7 +333,7 @@ export function PlacementSummary({ tool, output }: { tool: string; output: unkno
 		const j = JSON.parse(typeof text === "string" ? text : "{}") as { topics?: Array<{ autoGraded?: string }>; placementDecisions?: Array<{ decision: string }> };
 		if (j.topics) {
 			const [r, t] = j.topics.reduce(([a, b], x) => { const [p, q] = (x.autoGraded ?? "0/0").split("/").map(Number); return [a + (p || 0), b + (q || 0)]; }, [0, 0]);
-			line = `Test znanja predat · ${j.topics.length} tema · automatski ocenjeno ${r}/${t}`;
+			line = `Test znanja predat · ${j.topics.length} ${j.topics.length % 10 >= 2 && j.topics.length % 10 <= 4 && (j.topics.length % 100 < 12 || j.topics.length % 100 > 14) ? "teme" : "tema"} · automatski ocenjeno ${r}/${t}`;
 		}
 		if (j.placementDecisions) {
 			const c = (d: string) => j.placementDecisions!.filter((x) => x.decision === d).length;
