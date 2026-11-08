@@ -490,6 +490,8 @@ export interface UserSettings {
 	compaction?: CompactionSettings;
 	/** Fork: Kartice (core/cards.ts normalizeCardSettings fills defaults). */
 	cards?: Partial<CardSettings>;
+	/** Fork: topic notes ({ folder?: string }). */
+	notes?: { folder?: string; enabled?: boolean };
 	[key: string]: unknown;
 }
 

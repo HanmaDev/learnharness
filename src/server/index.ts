@@ -41,6 +41,7 @@ export { effectivePromptSegments, allSegmentPaths, readPromptOverride } from "..
 export * from "./keys.ts";
 export * from "./search.ts";
 export { authStore } from "../store/auth.ts";
+export { readStudyLog, recordStudySeconds } from "../store/study-time.ts";
 export * from "./settings-body.ts";
 export { fileAccessConfigurationError } from "./file-access.ts";
 export * from "./turn-liveness.ts";
@@ -49,6 +50,8 @@ export * from "./dismissal-park.ts";
 export * from "./compaction.ts";
 export * from "./cards.ts";
 export { generateCardDrafts, MAX_GENERATE } from "./card-generation.ts";
+export * from "./notes.ts";
+export * from "./side-chat.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";
 export * from "./observability.ts";
 export * from "./model-catalog.ts";

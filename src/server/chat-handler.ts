@@ -63,6 +63,7 @@ import {
 	type TurnInput,
 } from "../core/input-events.ts";
 import { steerDelivered } from "../core/contracts.ts";
+import { scheduleNotes } from "./notes.ts";
 import type {CallUsage} from "../core/contracts.ts";
 
 /**
@@ -617,6 +618,8 @@ export async function handleChatInput(
 					// against it and the pipeline's batches share it.
 					triggerExtraction(stores, extraction, chatId, effective.graph.extractionChunkTokens);
 				}
+				// Fork: topic notes for the steps the lesson has moved past.
+				if ((!requestCycle || requestCycle.dispatched) && record.kind !== "practice") scheduleNotes(chatId);
 				// PARKED DISMISSAL (owner, 2026-10-04): a dismissal that arrived
 				// mid-turn was parked by the dismiss route (202); now that
 				// persistTurn has landed the turn's messages, apply it against

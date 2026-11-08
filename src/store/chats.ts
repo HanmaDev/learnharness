@@ -18,6 +18,8 @@ import { deriveDoneNodes, type PlanTarget } from "../core/plan-progress.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import type { CourseCards } from "../core/cards.ts";
+import type { CourseNotes } from "../core/notes.ts";
+import type { SideThread } from "../core/side-chat.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
 import { phaseAt3Lh } from "../core/phases.ts";
 import { removeLeftoverTemps, writeFileAtomicSync } from "./atomic-write.ts";
@@ -88,7 +90,7 @@ function listChats(): ChatSummary[] {
 			.filter((f) => f.endsWith(".json"))
 			.map((f) => getChat(f.slice(0, -5)))
 			.filter((r): r is ChatRecord => r !== null)
-			.map(({ messages, tree, turns, extractions, imageSnapshots: _imageSnapshots, cards: _cards, ...summary }) => {
+			.map(({ messages, tree, turns, extractions, imageSnapshots: _imageSnapshots, cards: _cards, notes: _notes, sideThreads: _sideThreads, ...summary }) => {
 				// Per-record isolation (Wave B): a record whose messages fail the
 				// projection (e.g. pre-Wave-B UIMessage-format scratch — the
 				// zero-back-compat wipe makes these "corrupt") must not blank the
@@ -308,6 +310,28 @@ function updateCards(id: string, change: (cards: CourseCards) => void): CourseCa
 	return cards;
 }
 
+/** Fork: change a course's notes (same read/merge/write discipline). */
+function updateNotes(id: string, change: (notes: CourseNotes) => void): CourseNotes {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const notes: CourseNotes = record.notes ?? {};
+	change(notes);
+	record.notes = notes;
+	writeChat(record);
+	return notes;
+}
+
+/** Fork: change a session's side threads (same discipline). */
+function updateSideThreads(id: string, change: (threads: SideThread[]) => void): SideThread[] {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const threads: SideThread[] = record.sideThreads ?? [];
+	change(threads);
+	record.sideThreads = threads;
+	writeChat(record);
+	return threads;
+}
+
 export const chatStore: ChatStore = {
 	createChat,
 	getChat,
@@ -319,6 +343,8 @@ export const chatStore: ChatStore = {
 	saveTree,
 	savePlanTarget,
 	updateCards,
+	updateNotes,
+	updateSideThreads,
 	saveSettings,
 	renameChat,
 	deleteChat,

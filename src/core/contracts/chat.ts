@@ -6,6 +6,8 @@
  * master. Pure types + protocol docs + tiny pure helpers. See docs/archive/vision.md.
  */
 import type { CourseCards } from "../cards.ts";
+import type { CourseNotes } from "../notes.ts";
+import type { SideThread } from "../side-chat.ts";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { LhMessage } from "../native-messages.ts";
 import type { Phase3 } from "../phases.ts";
@@ -53,6 +55,11 @@ export interface ChatRecord {
 	/** Fork: Kartice — the learner's reviews, switches and generated cards
 	 *  (core/cards.ts). The cards themselves are derived from the transcript. */
 	cards?: CourseCards;
+	/** Fork: topic notes per plan step (core/notes.ts) — never shown to the teacher. */
+	notes?: CourseNotes;
+	/** Fork: side chats (core/side-chat.ts) — never part of `messages`, so the
+	 *  teacher, extraction, cards and notes never see them. */
+	sideThreads?: SideThread[];
 	/** Append-only usage log (observability, 2026-09): one entry per model
 	 * turn. DELIBERATELY a parallel log, not per-message metadata — the client
 	 * re-POSTs its message list every turn and its copies never carry

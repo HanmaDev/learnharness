@@ -12,6 +12,8 @@
 import type { LhMessage } from "./native-messages.ts";
 import type { PlanTarget } from "./plan-progress.ts";
 import type { CourseCards } from "./cards.ts";
+import type { CourseNotes } from "./notes.ts";
+import type { SideThread } from "./side-chat.ts";
 import type {
 	ChatRecord,
 	ImageSnapshot,
@@ -59,6 +61,10 @@ export interface ChatStore {
 	savePlanTarget(id: string, target: PlanTarget | null): void;
 	/** Fork: change a course's card data in one read/merge/write. */
 	updateCards(id: string, change: (cards: CourseCards) => void): CourseCards;
+	/** Fork: change a course's notes in one read/merge/write. */
+	updateNotes(id: string, change: (notes: CourseNotes) => void): CourseNotes;
+	/** Fork: change a session's side threads in one read/merge/write. */
+	updateSideThreads(id: string, change: (threads: SideThread[]) => void): SideThread[];
 	/** Append one usage entry to the record's turn log (the money channel,
 	 * 2026-09): idempotent per turn id — each request carries its own, so
 	 * a turn persisted twice appends once while continuation turns (which
