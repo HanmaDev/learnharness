@@ -13,13 +13,15 @@ import { formatInterval, toSerbianLatin, type Card, type CardRating } from "@/sr
 import { ReviewCard, type ReviewOutcome } from "./review-card";
 import { ForecastChart, ForecastSummary } from "./forecast";
 import { NewCardsDialog } from "./new-cards";
+import { MistakesTab } from "./mistakes-tab";
 import { useCourseCards, type CourseCardsView } from "./use-cards";
 
-export type DeckTab = "review" | "all" | "schedule";
+export type DeckTab = "review" | "all" | "schedule" | "mistakes";
 const TABS: Array<[DeckTab, string]> = [
 	["review", "Ponavljanje"],
 	["all", "Sve kartice"],
 	["schedule", "Raspored"],
+	["mistakes", "Greške"],
 ];
 
 const MONTHS = ["jan", "feb", "mar", "apr", "maj", "jun", "jul", "avg", "sep", "okt", "nov", "dec"];
@@ -89,6 +91,7 @@ export function DeckView({ chatId, initialTab }: { chatId: string; initialTab: D
 				{tab === "review" && !off && <ReviewTab view={view} onReview={review} onShowAll={() => setTab("all")} />}
 				{tab === "all" && <AllTab view={view} onFlags={setFlags} onNew={() => setNewOpen(true)} />}
 				{tab === "schedule" && <ScheduleTab view={view} />}
+				{tab === "mistakes" && <MistakesTab chatId={chatId} />}
 			</div>
 			{newOpen && <NewCardsDialog chatId={chatId} view={view} onClose={() => setNewOpen(false)} />}
 		</Shell>

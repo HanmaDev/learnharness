@@ -5,6 +5,7 @@
  * is owned outright by its stream — cross-domain schema changes go through
  * master. Pure types + protocol docs + tiny pure helpers. See docs/archive/vision.md.
  */
+import type { CourseMistakes } from "../mistakes.ts";
 import type { CourseCards } from "../cards.ts";
 import type { CourseNotes } from "../notes.ts";
 import type { SideThread } from "../side-chat.ts";
@@ -60,6 +61,8 @@ export interface ChatRecord {
 	/** Fork: side chats (core/side-chat.ts) — never part of `messages`, so the
 	 *  teacher, extraction, cards and notes never see them. */
 	sideThreads?: SideThread[];
+	/** Fork: the mistake log (core/mistakes.ts), keyed by question call id. */
+	mistakes?: CourseMistakes;
 	/** Append-only usage log (observability, 2026-09): one entry per model
 	 * turn. DELIBERATELY a parallel log, not per-message metadata — the client
 	 * re-POSTs its message list every turn and its copies never carry

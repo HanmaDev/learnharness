@@ -7,6 +7,7 @@
  * composition root (src/server/stores.ts); nothing else constructs it.
  */
 
+import type { CourseMistakes } from "../core/mistakes.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
@@ -90,7 +91,7 @@ function listChats(): ChatSummary[] {
 			.filter((f) => f.endsWith(".json"))
 			.map((f) => getChat(f.slice(0, -5)))
 			.filter((r): r is ChatRecord => r !== null)
-			.map(({ messages, tree, turns, extractions, imageSnapshots: _imageSnapshots, cards: _cards, notes: _notes, sideThreads: _sideThreads, ...summary }) => {
+			.map(({ messages, tree, turns, extractions, imageSnapshots: _imageSnapshots, cards: _cards, notes: _notes, sideThreads: _sideThreads, mistakes: _mistakes, ...summary }) => {
 				// Per-record isolation (Wave B): a record whose messages fail the
 				// projection (e.g. pre-Wave-B UIMessage-format scratch — the
 				// zero-back-compat wipe makes these "corrupt") must not blank the
@@ -321,6 +322,17 @@ function updateNotes(id: string, change: (notes: CourseNotes) => void): CourseNo
 	return notes;
 }
 
+/** Fork: change a course's mistake log (same discipline). */
+function updateMistakes(id: string, change: (mistakes: CourseMistakes) => void): CourseMistakes {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const mistakes: CourseMistakes = record.mistakes ?? {};
+	change(mistakes);
+	record.mistakes = mistakes;
+	writeChat(record);
+	return mistakes;
+}
+
 /** Fork: change a session's side threads (same discipline). */
 function updateSideThreads(id: string, change: (threads: SideThread[]) => void): SideThread[] {
 	const record = getChat(id);
@@ -355,6 +367,7 @@ export const chatStore: ChatStore = {
 	listChatIds,
 	updateNotes,
 	updateSideThreads,
+	updateMistakes,
 	saveSettings,
 	renameChat,
 	deleteChat,

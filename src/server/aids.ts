@@ -3,14 +3,24 @@
  * Wolfram (only while a WOLFRAM_APP_ID is set, read fresh per turn) and
  * YouTube transcripts (always).
  */
+import { mistakeViews, openMistakesText } from "../core";
+import { stores } from "./stores.ts";
 import type { AgentAids } from "../agent/tools/aids.ts";
 import { wolframAvailable, wolframLlmQuery } from "./wolfram.ts";
 import { fetchTranscript, transcriptMarkdown } from "./youtube.ts";
 
 const MAX_TRANSCRIPT_CHARS = 80_000;
 
-export function agentAids(): AgentAids {
+export function agentAids(chatId?: string): AgentAids {
 	return {
+		...(chatId
+			? {
+					openMistakes: () => {
+						const chat = stores.chatStore.getChat(chatId);
+						return chat ? openMistakesText(mistakeViews(chat.messages, chat.mistakes, chat.tree)) : "No open mistakes.";
+					},
+				}
+			: {}),
 		...(wolframAvailable() ? { wolfram: (q: string, signal?: AbortSignal) => wolframLlmQuery(q, signal) } : {}),
 		youtube: async (url, range, signal) => {
 			const tr = await fetchTranscript(url, signal);

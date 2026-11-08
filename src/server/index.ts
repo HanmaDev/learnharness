@@ -54,6 +54,7 @@ export * from "./notes.ts";
 export { wolframAvailable, wolframEqual, wolframUsage } from "./wolfram.ts";
 export { fetchTranscript, transcriptMarkdown, youtubeId } from "./youtube.ts";
 export * from "./side-chat.ts";
+export * from "./mistakes.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";
 export * from "./observability.ts";
 export * from "./model-catalog.ts";

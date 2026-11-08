@@ -1,4 +1,5 @@
 import type { Usage } from "@earendil-works/pi-ai";
+import { scheduleMistakes } from "./mistakes.ts";
 import { agentAids } from "./aids.ts";
 import {
 	createPracticeAgent,
@@ -507,7 +508,7 @@ export async function handleChatInput(
 						// The registry drop's signal (2026-09-20): no live engine
 						// = no research tool in the teacher's registry.
 						searchAvailable,
-						aids: agentAids(),
+						aids: agentAids(chatId),
 					},
 					agentOpts,
 				)
@@ -621,6 +622,8 @@ export async function handleChatInput(
 					// against it and the pipeline's batches share it.
 					triggerExtraction(stores, extraction, chatId, effective.graph.extractionChunkTokens);
 				}
+				// Fork: the mistake log — analyse new wrong answers in the background.
+				if ((!requestCycle || requestCycle.dispatched) && record.kind !== "practice") scheduleMistakes(chatId);
 				// PARKED DISMISSAL (owner, 2026-10-04): a dismissal that arrived
 				// mid-turn was parked by the dismiss route (202); now that
 				// persistTurn has landed the turn's messages, apply it against

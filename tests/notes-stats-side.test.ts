@@ -176,3 +176,34 @@ describe("review fixes (notes/side)", () => {
 		assert.equal(notesMarker("c1"), "<!-- learnharness:c1 -->");
 	});
 });
+
+import { mistakeViews, openMistakesText, unanalysed, wrongAnswers } from "../src/core/mistakes.ts";
+describe("mistake log", () => {
+	const msgs = [
+		...call("quiz", { nodeId: "a", question: "Q1", correctAnswer: "x" }, T0, { answeredAt: new Date(T0).toISOString(), correct: false }),
+		text("assistant", "Ne, tačno je x jer…", T0 + MIN),
+		...call("exercise", { nodeId: "b", question: "Q2", format: "blanks" }, T0, { answeredAt: new Date(T0 + MIN).toISOString(), exercise: { result: { graded: true, correct: false } } }),
+		...call("quiz", { nodeId: "a", question: "Q3" }, T0, { answeredAt: new Date(T0 + 2 * MIN).toISOString(), correct: true }),
+		...call("quiz", { nodeId: "c", question: "Q4" }, T0, { correct: false, dismissed: true }),
+		...call("explain", { nodeId: "c", question: "Q5" }, T0, { text: "nešto" }),
+	];
+	it("only app-graded wrong answers count; feedback is the next teacher message", () => {
+		const w = wrongAnswers(msgs);
+		assert.deepEqual(w.map((x) => x.args.question), ["Q1", "Q2"]);
+		assert.match(w[0]!.feedback, /tačno je x/);
+	});
+	it("a later right answer on the same step resolves; manual flags win; open list for the teacher", () => {
+		const id1 = wrongAnswers(msgs)[0]!.callId;
+		const id2 = wrongAnswers(msgs)[1]!.callId;
+		const analysis = { type: "pojam" as const, whatWentWrong: "Pomešao A i B.", correctVersion: "x", rule: "Uvek proveri A.", at: "x" };
+		const v = mistakeViews(msgs, { [id1]: { analysis }, [id2]: { analysis } }, tree);
+		const byQ = (q: string) => v.find((m) => m.question === q)!;
+		assert.equal(byQ("Q1").resolved, true, "Q3 on the same step was right later");
+		assert.equal(byQ("Q1").resolvedByLaterAnswer, true);
+		assert.equal(byQ("Q2").resolved, false);
+		assert.equal(mistakeViews(msgs, { [id1]: { analysis, resolved: false } }, tree).find((m) => m.callId === id1)!.resolved, false, "reopened by hand");
+		assert.match(openMistakesText(v), /\[b\] Pogrešno razumevanje pojma: Pomešao A i B\. Rule: Uvek proveri A\./);
+		assert.deepEqual(unanalysed(msgs, { [id1]: { analysis } }).map((w) => w.callId), [id2]);
+		assert.deepEqual(unanalysed(msgs, { [id1]: { analysis }, [id2]: { failures: 3 } }), [], "gives up after 3 failures");
+	});
+});

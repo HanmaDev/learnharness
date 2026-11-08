@@ -8,6 +8,6 @@ export const dynamic = "force-dynamic";
 export default async function DeckPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
 	const [{ id }, { tab }] = await Promise.all([params, searchParams]);
 	if (!getChat(id)) notFound();
-	const initialTab: DeckTab = tab === "all" || tab === "schedule" ? tab : "review";
+	const initialTab: DeckTab = tab === "all" || tab === "schedule" || tab === "mistakes" ? tab : "review";
 	return <DeckView key={id} chatId={id} initialTab={initialTab} />;
 }
