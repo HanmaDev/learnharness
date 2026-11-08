@@ -1,5 +1,6 @@
 "use client";
 
+import { StartModeSelect, useStartMode } from "@/components/start-mode-select";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Conversation, ConversationContent, ConversationEmptyState } from "@/components/ai-elements/conversation";
@@ -47,6 +48,7 @@ export async function startDraftSession(
 	picks?: readonly DraftPick[],
 	starter = new SessionStarter(),
 	settingsIdentity?: string,
+	startMode?: "brza" | "test" | "nula",
 ): Promise<string | null> {
 	const t = text.trim();
 	if (!t) return null;
@@ -57,7 +59,7 @@ export async function startDraftSession(
 	return starter.start(
 		mode === "practice"
 			? { title: t, kind: "practice", ...(picks && picks.length > 0 ? { graphContext: { propositions: picks } } : {}) }
-			: { title: t },
+			: { title: t, ...(startMode ? { startMode } : {}) },
 		fetchLike,
 		settingsIdentity,
 	);
@@ -80,7 +82,10 @@ export function DraftShell({
 	onOpenPicker,
 	onClearPicks,
 	overlay,
+	startModeSlot,
 }: {
+	/** Fork (placement): the start-mode selector (teaching drafts). */
+	startModeSlot?: React.ReactNode;
 	busy: boolean;
 	text: string;
 	onChange: (v: string) => void;
@@ -210,6 +215,7 @@ export function DraftShell({
 								<StatsBar
 									dictationSlot={<DictationBar dictation={dictation} />}
 									turns={[]}
+									leadingSlot={startModeSlot}
 								/>
 							</div>
 						</div>
@@ -244,6 +250,9 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 	const [busy, setBusy] = useState(false);
 	const startingRef = useRef(false);
 	const starterRef = useRef(new SessionStarter());
+	const [startMode, setStartMode] = useStartMode();
+	const startModeRef = useRef(startMode);
+	startModeRef.current = startMode;
 	const [startError, setStartError] = useState(false);
 	// THE PICK BAR (owner round 10): the draft's lifted pick set + the
 	// snapshot the standalone chain-table picker reads. Lazy — the graph
@@ -306,7 +315,7 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 		setBusy(true);
 		setStartError(false);
 		void startDraftSession(draft, fetch, mode === "practice" ? "practice" : undefined, mode === "practice" ? picksRef.current : undefined,
-			starterRef.current, JSON.stringify(catalog?.slots.strong))
+			starterRef.current, JSON.stringify(catalog?.slots.strong), mode === "practice" ? undefined : startModeRef.current)
 			.then((target) => {
 				if (target) router.push(target);
 				else { startingRef.current = false; setBusy(false); }
@@ -321,6 +330,7 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 	return (
 		<>
 			<DraftShell
+				startModeSlot={mode === "practice" ? undefined : <StartModeSelect value={startMode} onChange={setStartMode} />}
 				busy={busy}
 				startError={startError}
 				text={text}

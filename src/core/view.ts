@@ -455,6 +455,9 @@ function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 		case "plan-target":
 			// Fork: model-only — the learner made the change in the plan view.
 			return;
+		case "start-mode":
+			// Fork: model-only — the course's start choice (placement).
+			return;
 		case "problem-dismissed":
 			// UI-only (the ask-style dismissal): the synthesized conclude
 			// pair — which rides the NEXT input — carries the record's face.

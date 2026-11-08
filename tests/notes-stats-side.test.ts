@@ -207,3 +207,35 @@ describe("mistake log", () => {
 		assert.deepEqual(unanalysed(msgs, { [id1]: { analysis }, [id2]: { failures: 3 } }), [], "gives up after 3 failures");
 	});
 });
+
+import { placementAnswerText, placementDecisionText, placementTestProblems, quizCorrect, startModeText } from "../src/core/placement.ts";
+describe("placement", () => {
+	const test = {
+		title: "Test",
+		topics: [
+			{ id: "html", title: "HTML", questions: [
+				{ id: "q1", kind: "quiz" as const, question: "?", options: [{ label: "A", value: "a" }, { label: "B", value: "b" }, { label: "C", value: "c" }], correctAnswer: "b" },
+				{ id: "q2", kind: "short" as const, question: "?", correctAnswer: "odgovor" },
+			] },
+			{ id: "css", title: "CSS", questions: [{ id: "q3", kind: "math" as const, question: "?", correctAnswer: "2x" }] },
+		],
+	};
+	it("validates authoring", () => {
+		assert.deepEqual(placementTestProblems(test), []);
+		const bad = { ...test, topics: [{ ...test.topics[0]!, questions: [{ ...test.topics[0]!.questions[0]!, correctAnswer: "z" }, { ...test.topics[0]!.questions[1]!, id: "q1" }] }] };
+		const p = placementTestProblems(bad);
+		assert.ok(p.some((x) => /correctAnswer must be option/.test(x)));
+		assert.ok(p.some((x) => /duplicate question id/.test(x)));
+	});
+	it("answer and decision texts carry per-topic results", () => {
+		assert.equal(quizCorrect(test.topics[0]!.questions[0]!, ["b"]), true);
+		const a = JSON.parse(placementAnswerText(test, [{ qid: "q1", value: ["b"], correct: true }, { qid: "q2", value: "nešto" }, { qid: "q3", value: "", dontKnow: true, correct: false }]));
+		assert.equal(a.topics[0].autoGraded, "1/1");
+		assert.equal(a.topics[1].questions[0].answer, "(ne znam)");
+		const d = JSON.parse(placementDecisionText({ topics: [{ id: "html", title: "HTML", score: 90, proposal: "znam" }, { id: "css", title: "CSS", score: 20, proposal: "ucim" }] }, { css: "ponoviti" }));
+		assert.deepEqual(d.placementDecisions.map((x: { decision: string }) => x.decision), ["znam", "ponoviti"]);
+		assert.equal(d.placementDecisions[1].changedByLearner, "from ucim");
+		assert.match(startModeText("test"), /placement_test/);
+		assert.match(startModeText("nula"), /probe_done immediately/);
+	});
+});

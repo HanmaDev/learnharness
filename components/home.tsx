@@ -1,5 +1,6 @@
 "use client";
 
+import { StartModeSelect, useStartMode } from "@/components/start-mode-select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CornerDownLeftIcon, DumbbellIcon } from "lucide-react";
@@ -96,6 +97,7 @@ export function Home({
 	 *  the composer opens the picker; the picks seed the opening prompt).
 	 *  Not enforcing any input format — the picks are a convenience. */
 	const [mode, setMode] = useState<"teach" | "practice">("teach");
+	const [startMode, setStartMode] = useStartMode();
 	const [practiceProps, setPracticeProps] = useState<{ id: string; name: string; statement: string }[]>([]);
 	const [chainSelectOpen, setChainSelectOpen] = useState(false);
 	// The chain table is CONTROLLED off this id set (the lifted pick).
@@ -149,7 +151,7 @@ export function Home({
 			// chains among them); the prompt stays the learner's own words.
 			const target = await starterRef.current.start({
 				title: t,
-				...(mode === "practice" ? { kind: "practice" } : {}),
+				...(mode === "practice" ? { kind: "practice" } : { startMode }),
 				...(practiceProps.length > 0 ? { graphContext: { propositions: practiceProps } } : {}),
 			}, fetch, JSON.stringify(catalog?.slots.strong));
 			router.push(target);
@@ -320,6 +322,7 @@ export function Home({
 										{m === "teach" ? "Teach" : "Practice"}
 									</button>
 								))}
+								{mode === "teach" && <StartModeSelect value={startMode} onChange={setStartMode} />}
 							</div>
 						}
 					/>

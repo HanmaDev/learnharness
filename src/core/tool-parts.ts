@@ -27,6 +27,7 @@
  * quiet fallback, never a crash.
  */
 
+import { placementResultSchema, placementTestSchema, type PlacementResultInput, type PlacementTestInput } from "./placement.ts";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 import { quizDisplayInputSchema, askInputSchema, askOptionProblems, quizInputProblems, explainInputProblems, explainDisplayInputSchema, type AskToolInput, type QuizToolInput, type ExplainToolInput } from "./question-core.ts";
@@ -130,6 +131,8 @@ export function parseQuestionInput(tool: string, input: unknown): QuizToolInput 
 		case "explain": case "recall": return parseExplainInput(input);
 		case "ask_user_question": return parseAskInput(input);
 		case "exercise": return parseExerciseInput(input) as never;
+		case "placement_test": return boundaryParse<PlacementTestInput>(placementTestSchema, input) as never;
+		case "placement_result": return boundaryParse<PlacementResultInput>(placementResultSchema, input) as never;
 		default: return undefined;
 	}
 }

@@ -77,6 +77,8 @@ export interface LhMarkerMessage {
 		| "practice-next"
 		| "problem-dismissed"
 		| "compaction"
+		/** Fork: how the learner chose to start the course (placement). */
+		| "start-mode"
 		/** Fork: the learner changed the plan's target date in the plan view. */
 		| "plan-target";
 	/** The model-facing text ("" for plan blocks — UI-only). */
@@ -926,7 +928,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "custom") {
 		if (["probe-handoff", "subagent-steer", "subagent-abort"].includes(message.customType)) return "automatic";
 		if (["practice-thinking", "practice-next"].includes(message.customType)) return "learner";
-		return ["graph-context", "plan-block", "problem-dismissed", "compaction", "plan-target"].includes(message.customType) ? "neutral" : "unrecognizable";
+		return ["graph-context", "plan-block", "problem-dismissed", "compaction", "plan-target", "start-mode"].includes(message.customType) ? "neutral" : "unrecognizable";
 	}
 	if (message.role === "toolResult") {
 		if (message.isError && (message.details as { questionRecovery?: unknown } | null)?.questionRecovery === true) {
@@ -1013,4 +1015,18 @@ export function needsContinuation(messages: readonly LhMessage[]): boolean {
 		(b) => b.type === "toolCall" && typeof b.id === "string",
 	);
 	return calls.length > 0 && calls.every((b) => answered.has(b.id!));
+}
+
+/** Fork: the course's start choice (Brza provera / Test znanja / Od nule) —
+ *  hidden, model-facing, message[0] of a new teaching course. */
+export function newStartModeMessage(mode: "brza" | "test" | "nula", text: string): LhMarkerMessage {
+	return {
+		id: newMessageId(),
+		role: "custom",
+		customType: "start-mode",
+		content: text,
+		display: false,
+		details: { mode },
+		timestamp: Date.now(),
+	};
 }

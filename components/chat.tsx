@@ -1,5 +1,6 @@
 "use client";
 
+import { PlacementDock, PlacementSummary } from "@/components/placement-dock";
 import { SelectionAsk, SideChip, SidePanel, useSideThreads, type SideRequest } from "@/components/side-chat/side-panel";
 import { CardsDueChip, NotesChip } from "@/components/cards/due-chip";
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -1638,6 +1639,11 @@ export function Chat({
 														}
 														return null;
 													}
+													case "tool-placement_test":
+													case "tool-placement_result":
+														// Fork (placement): never a live card (the test input holds the
+														// answer key); once answered, one quiet summary line.
+														return part.state === "output-available" ? <PlacementSummary key={pi} tool={part.type.slice(5)} output={part.output} /> : null;
 													default: {
 														// A tool call being WRITTEN (owner, streaming round 2026-10-01):
 														// input-streaming spans the whole execution, and the live card —
@@ -1831,7 +1837,19 @@ export function Chat({
 						onClose={() => setFigureFocus(null)}
 					/>
 				)}
-				{planOpen && <PlanPopup messages={messages} onClose={() => setPlanOpen(false)} progress={planProgress} onSetTarget={setPlanTargetDate} />}
+				{planOpen && (
+					<PlanPopup
+						messages={messages}
+						onClose={() => setPlanOpen(false)}
+						progress={planProgress}
+						onSetTarget={setPlanTargetDate}
+						onPlacementTest={
+							kind === "practice" || busy || pending
+								? undefined
+								: () => void send({ type: "text", text: "Želim Test znanja iz svega što smo do sada prešli — pokreni placement_test, pa mi pokaži rezultat po temama da potvrdim šta ponavljamo." })
+						}
+					/>
+				)}
 				{sideOpen && (
 					<SidePanel
 						chatId={chatId}
@@ -2497,7 +2515,15 @@ function DockOverlay({
 							key={mode}
 							className={mode === initialModeRef.current ? "flow-root" : "flow-root dock-variant"}
 						>
-							{pending ? (
+							{pending && (pending.tool === "placement_test" || pending.tool === "placement_result") ? (
+								<PlacementDock
+									key={pending.toolCallId}
+									tool={pending.tool}
+									toolCallId={pending.toolCallId}
+									input={pending.input as never}
+									onSubmit={onSubmitAnswer}
+								/>
+							) : pending ? (
 								<QuestionDock
 									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "exercise"}
 									toolCallId={pending.toolCallId}

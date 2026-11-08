@@ -3,6 +3,8 @@ import { clearOpeningPrompt, OPENING_PROMPT_FAILURE, stashOpeningPrompt } from "
 interface SessionCreation {
 	title: string;
 	kind?: "practice";
+	/** Fork (placement): how a teaching course starts. */
+	startMode?: "brza" | "test" | "nula";
 	graphContext?: { propositions: readonly { id: string; name: string; statement: string }[] };
 }
 

@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { placementResultTool, placementTestTool } from "./tools/placement.ts";
 import { aidTools, type AgentAids } from "./tools/aids.ts";
 import { exerciseInputObject, exerciseInputProblems } from "../core/exercise.ts";
 import { sqlExerciseProblems } from "./tools/sql-validate.ts";
@@ -344,6 +345,9 @@ export function createProberTools(
 				pdf: jobs.pdf!,
 				// Fork: Wolfram / YouTube transcripts.
 				...aidTools(ctx.aids),
+				// Fork: the full placement test (Test znanja) and its result screen.
+				placement_test: placementTestTool,
+				placement_result: placementResultTool,
 				// The map reader (wave 7): present only when the settings gate
 				// opened.
 				...(ctx.graphStore
@@ -515,6 +519,9 @@ export function createTeacherTools(
 			html_preview: createHtmlPreviewTool(),
 			// Fork: Wolfram (when keyed) and YouTube transcripts.
 			...aidTools(ctx.aids),
+			// Fork: a placement test later in a course ("Test znanja" from the plan).
+			placement_test: placementTestTool,
+			placement_result: placementResultTool,
 			...planTools(ctx),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
 		},

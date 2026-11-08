@@ -58,6 +58,9 @@ export const QUESTION_TOOLS = [
 	"recall",
 	// Fork: the structured, app-graded teaching formats (core/exercise.ts).
 	"exercise",
+	// Fork: the placement test and its result screen (core/placement.ts).
+	"placement_test",
+	"placement_result",
 ] as const;
 
 /** The tool→kind map (the dock's own fold, named once — the dismissal

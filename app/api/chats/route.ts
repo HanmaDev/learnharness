@@ -1,5 +1,5 @@
 import { chainsForSelection, formatChainLine } from "@/src/core";
-import { newGraphContextMessage, type GraphContextPick } from "@/src/core";
+import { newGraphContextMessage, newStartModeMessage, startModeText, type GraphContextPick } from "@/src/core";
 import { compactionInFlight, createChat, isTurnRunning, listChats, readSettingsRecord, stores, titleFromPrompt } from "@/src/server";
 import type { ChatListItem } from "@/src/core";
 
@@ -20,7 +20,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-	const body = (await req.json().catch(() => ({}))) as { title?: unknown; kind?: unknown; graphContext?: unknown };
+	const body = (await req.json().catch(() => ({}))) as { title?: unknown; kind?: unknown; graphContext?: unknown; startMode?: unknown };
 	const title = typeof body.title === "string" ? body.title : "";
 	// Practice sessions (owner, 2026-10-04): kind "practice" marks the
 	// record — the practice agent + its tools from turn 1, no extraction.
@@ -66,6 +66,13 @@ export async function POST(req: Request) {
 			formatChainLine(c, Object.fromEntries(byId)),
 		);
 		stores.chatStore.saveMessages(chat.id, [newGraphContextMessage(picks, chainLines)]);
+	}
+	// Fork (placement): a teaching course's start choice rides creation as a
+	// hidden marker the prober reads first. "brza" (the default) adds nothing.
+	const startMode = body.startMode;
+	if (kind !== "practice" && (startMode === "test" || startMode === "nula")) {
+		const existing = stores.chatStore.getChat(chat.id)?.messages ?? [];
+		stores.chatStore.saveMessages(chat.id, [...existing, newStartModeMessage(startMode, startModeText(startMode))]);
 	}
 	return Response.json({ id: chat.id, title: chat.title });
 }

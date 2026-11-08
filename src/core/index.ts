@@ -46,6 +46,7 @@ export * from "./notes.ts";
 export * from "./side-chat.ts";
 export * from "./stats.ts";
 export * from "./mistakes.ts";
+export * from "./placement.ts";
 export * from "./pending.ts";
 export * from "./prompt-segments.ts";
 export * from "./math-delims.ts";

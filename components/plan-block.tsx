@@ -762,9 +762,11 @@ const POPUP_PAD = GLOW_REACH;
  * territory. Surface 80% + blur (owner decision): the transcript ghosts
  * through while the focus owns the session area.
  */
-export function PlanPopup({ messages, onClose, progress, onSetTarget }: {
+export function PlanPopup({ messages, onClose, progress, onSetTarget, onPlacementTest }: {
 	messages: readonly PopupMessage[];
 	onClose: () => void;
+	/** Fork (placement): ask the teacher for a "Test znanja" over the course. */
+	onPlacementTest?: () => void;
 	/** Fork: done marks, time and pace (the chat view computes it). */
 	progress?: PlanProgress | null;
 	/** Fork: the plan view's target-date control. */
@@ -916,13 +918,26 @@ export function PlanPopup({ messages, onClose, progress, onSetTarget }: {
 			<div className="mb-2 flex items-center gap-2">
 				<span className="text-sm font-medium">The plan</span>
 				<span className="text-xs text-muted-foreground">live — statuses derive from your check outcomes</span>
+				{onPlacementTest && (
+					<button
+						type="button"
+						data-testid="plan-placement-test"
+						onClick={() => {
+							onPlacementTest();
+							onClose();
+						}}
+						className="ml-auto cursor-pointer rounded-md border border-border px-2.5 py-1 font-ui text-xs uppercase tracking-wider text-foreground hover:bg-accent"
+					>
+						Test znanja
+					</button>
+				)}
 				<Hint label="Close" binding="escape" side="left">
 <button
 					type="button"
 					onClick={onClose}
 					aria-label="Close"
 					data-testid="plan-popup-close"
-					className="ml-auto rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					className={cn(onPlacementTest ? "" : "ml-auto", "rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground")}
 				>
 					<XIcon className="size-4" />
 				</button>
