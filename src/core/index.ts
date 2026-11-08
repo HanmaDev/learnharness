@@ -39,6 +39,7 @@ export * from "./plan-tree.ts";
 export * from "./phases.ts";
 export * from "./plan-progress.ts";
 export * from "./exercise.ts";
+export * from "./cards.ts";
 export * from "./pending.ts";
 export * from "./prompt-segments.ts";
 export * from "./math-delims.ts";

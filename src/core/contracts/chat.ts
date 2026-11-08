@@ -5,6 +5,7 @@
  * is owned outright by its stream — cross-domain schema changes go through
  * master. Pure types + protocol docs + tiny pure helpers. See docs/archive/vision.md.
  */
+import type { CourseCards } from "../cards.ts";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { LhMessage } from "../native-messages.ts";
 import type { Phase3 } from "../phases.ts";
@@ -49,6 +50,9 @@ export interface ChatRecord {
 	/** Fork: photos the learner uploaded (snapshot id → upload time). Only
 	 *  these are ever pruned, and only while nothing in the record uses them. */
 	photoUploads?: Record<string, string>;
+	/** Fork: Kartice — the learner's reviews, switches and generated cards
+	 *  (core/cards.ts). The cards themselves are derived from the transcript. */
+	cards?: CourseCards;
 	/** Append-only usage log (observability, 2026-09): one entry per model
 	 * turn. DELIBERATELY a parallel log, not per-message metadata — the client
 	 * re-POSTs its message list every turn and its copies never carry

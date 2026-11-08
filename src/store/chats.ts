@@ -17,6 +17,7 @@ import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, ImageSn
 import { deriveDoneNodes, type PlanTarget } from "../core/plan-progress.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
+import type { CourseCards } from "../core/cards.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
 import { phaseAt3Lh } from "../core/phases.ts";
 import { removeLeftoverTemps, writeFileAtomicSync } from "./atomic-write.ts";
@@ -87,7 +88,7 @@ function listChats(): ChatSummary[] {
 			.filter((f) => f.endsWith(".json"))
 			.map((f) => getChat(f.slice(0, -5)))
 			.filter((r): r is ChatRecord => r !== null)
-			.map(({ messages, tree, turns, extractions, imageSnapshots: _imageSnapshots, ...summary }) => {
+			.map(({ messages, tree, turns, extractions, imageSnapshots: _imageSnapshots, cards: _cards, ...summary }) => {
 				// Per-record isolation (Wave B): a record whose messages fail the
 				// projection (e.g. pre-Wave-B UIMessage-format scratch — the
 				// zero-back-compat wipe makes these "corrupt") must not blank the
@@ -294,6 +295,19 @@ function savePlanTarget(id: string, target: PlanTarget | null): void {
 	writeChat(record);
 }
 
+/** Fork: change a course's card data (reviews, switches, generated cards).
+ *  Not conversation activity (updatedAt stays put); a synchronous
+ *  read/merge/write, so a turn's later saveMessages keeps it. */
+function updateCards(id: string, change: (cards: CourseCards) => void): CourseCards {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const cards: CourseCards = record.cards ?? {};
+	change(cards);
+	record.cards = cards;
+	writeChat(record);
+	return cards;
+}
+
 export const chatStore: ChatStore = {
 	createChat,
 	getChat,
@@ -304,6 +318,7 @@ export const chatStore: ChatStore = {
 	removeUnusedPhoto,
 	saveTree,
 	savePlanTarget,
+	updateCards,
 	saveSettings,
 	renameChat,
 	deleteChat,

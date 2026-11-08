@@ -32,6 +32,7 @@ import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 import { isSearchEngineId, SEARCH_ENGINES } from "../core/search.ts";
 import { isDictationLanguage, MAX_KEYTERM_LENGTH, MAX_KEYTERMS, normalizeKeyterms } from "../core/dictation.ts";
 import { parseFileAccessSettings } from "../core/file-access.ts";
+import type { CardSettings } from "../core/cards.ts";
 
 /** Parsed-or-rejected — `ok: false` carries the 400's error message. */
 export type SettingsBodyResult<T> =
@@ -94,6 +95,29 @@ export function parseGeneralSettingsBody(body: unknown): SettingsBodyResult<Gene
 		settings.autoUpdate = raw.autoUpdate;
 	}
 	return { ok: true, settings };
+}
+
+/** cards (fork): { enabled?, newPerDay?, maxReviewsPerDay?, retention? } */
+export function parseCardsSettingsBody(body: unknown): SettingsBodyResult<Partial<CardSettings>> {
+	const raw = asRecord(body);
+	if (!raw) return { ok: false, error: "Invalid JSON body" };
+	const out: Partial<CardSettings> = {};
+	if (raw.enabled !== undefined) {
+		if (typeof raw.enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+		out.enabled = raw.enabled;
+	}
+	const ints: Array<["newPerDay" | "maxReviewsPerDay", number, number]> = [["newPerDay", 0, 500], ["maxReviewsPerDay", 1, 5000]];
+	for (const [k, lo, hi] of ints) {
+		if (raw[k] === undefined) continue;
+		const v = raw[k];
+		if (typeof v !== "number" || !Number.isInteger(v) || v < lo || v > hi) return { ok: false, error: `${k} must be an integer ${lo}–${hi}` };
+		out[k] = v;
+	}
+	if (raw.retention !== undefined) {
+		if (typeof raw.retention !== "number" || raw.retention < 0.7 || raw.retention > 0.97) return { ok: false, error: "retention must be 0.7–0.97" };
+		out.retention = raw.retention;
+	}
+	return { ok: true, settings: out };
 }
 
 /** claudeCode: explicit app-wide opt-in. Empty section resets to off. */
@@ -481,6 +505,7 @@ export const SETTINGS_SECTIONS = {
 	models: parseModelsSettingsBody,
 	dictation: parseDictationSettingsBody,
 	claudeCode: parseClaudeCodeSettingsBody,
+	cards: parseCardsSettingsBody,
 } as const;
 
 export type SettingsSectionName = keyof typeof SETTINGS_SECTIONS;
