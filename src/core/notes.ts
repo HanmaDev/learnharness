@@ -38,6 +38,8 @@ export interface NoteExtra {
 export interface CourseNotes {
 	/** Short course name for the file ("Veb dizajn"), written once. */
 	courseTitle?: string;
+	/** The notes file's name in the notes folder, fixed at the first write. */
+	fileName?: string;
 	sections?: Record<string, NoteSection>;
 	extras?: Record<string, NoteExtra[]>;
 }
@@ -166,9 +168,13 @@ export function noteSteps(
 	});
 }
 
+/** The line that marks a notes file as this course's (so two courses with
+ *  the same name never overwrite each other's file). */
+export const notesMarker = (chatId: string) => `<!-- learnharness:${chatId} -->`;
+
 /** The whole notes file. */
-export function notesDocument(courseTitle: string, steps: readonly NoteStepView[]): string {
-	const parts = [`# ${courseTitle}`, ""];
+export function notesDocument(courseTitle: string, steps: readonly NoteStepView[], chatId?: string): string {
+	const parts = [...(chatId ? [notesMarker(chatId)] : []), `# ${courseTitle}`, ""];
 	for (const s of steps) {
 		parts.push(`## ${s.number}. ${s.title}`, "");
 		if (s.markdown) parts.push(s.markdown.trim(), "");
@@ -176,6 +182,44 @@ export function notesDocument(courseTitle: string, steps: readonly NoteStepView[
 		for (const e of s.extras) parts.push(`### Dodatno: ${e.title}`, "", e.markdown.trim(), "");
 	}
 	return parts.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+const clip = (v: unknown, n = 600) => {
+	const t = typeof v === "string" ? v : v === undefined ? "" : JSON.stringify(v);
+	return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
+/** The answer keys of the questions in a transcript slice — the lesson
+ *  markdown shows only the question text and right/wrong, so the notes
+ *  writer gets the real answers from the calls themselves. */
+export function questionKeys(slice: readonly LhMessage[]): string {
+	const out: string[] = [];
+	for (const m of slice) {
+		const content = (m as { role?: string; content?: unknown }).content;
+		if ((m as { role?: string }).role !== "assistant" || !Array.isArray(content)) continue;
+		for (const b of content as Block[]) {
+			if (b.type !== "toolCall" || !QUESTION_TOOLS.has(b.name ?? "")) continue;
+			const a = (b.arguments ?? {}) as Record<string, unknown>;
+			const lines = [`- **${clip(a.question, 400)}**`];
+			if (b.name === "quiz" && Array.isArray(a.options)) {
+				const opts = (a.options as Array<{ label?: unknown; value?: unknown }>).filter((o) => o && typeof o.label === "string");
+				lines.push(`  - Opcije: ${opts.map((o) => String(o.label)).join(" | ")}`);
+				const keys = Array.isArray(a.correctAnswer) ? a.correctAnswer : [a.correctAnswer];
+				const right = opts.filter((o) => keys.includes(o.value ?? o.label)).map((o) => String(o.label));
+				lines.push(`  - Tačno: ${right.length ? right.join(" | ") : clip(a.correctAnswer)}`);
+			} else if (b.name === "explain") {
+				lines.push(`  - Tačan odgovor: ${clip(a.correctAnswer)}`);
+			} else {
+				const key = Object.fromEntries(
+					Object.entries(a).filter(([k]) => ["blanks", "steps", "lines", "mistakeLine", "pairs", "referenceSql", "answerLatex", "acceptLatex", "template"].includes(k)),
+				);
+				lines.push(`  - Ključ (${clip(a.format, 20)}): ${clip(key, 900)}`);
+			}
+			if (typeof a.explanation === "string" && a.explanation.trim()) lines.push(`  - Zašto: ${clip(a.explanation, 600)}`);
+			out.push(lines.join("\n"));
+		}
+	}
+	return out.join("\n");
 }
 
 /** A file-name-safe course name. */

@@ -23,6 +23,8 @@ import {
 	nodeWindows,
 	notesDocument,
 	notesFileName,
+	notesMarker,
+	questionKeys,
 	noteSteps,
 	sessionMarkdown,
 	staleSteps,
@@ -55,8 +57,23 @@ export function courseTitleOf(chat: ChatRecord): string {
 	return chat.notes?.courseTitle ?? toSerbianLatin(chat.title).slice(0, 60);
 }
 
+/** The notes file: the name fixed at the first write; before that, the name
+ *  it would get (a free one — never another course's file). */
 export function notesFilePath(chat: ChatRecord): string {
-	return path.join(notesFolder(), notesFileName(courseTitleOf(chat)));
+	const folder = notesFolder();
+	if (chat.notes?.fileName) return path.join(folder, chat.notes.fileName);
+	const base = notesFileName(courseTitleOf(chat)).replace(/\.md$/, "");
+	for (let i = 1; i < 100; i++) {
+		const name = i === 1 ? `${base}.md` : `${base} (${i}).md`;
+		const file = path.join(folder, name);
+		if (!fs.existsSync(file)) return file;
+		try {
+			if (fs.readFileSync(file, "utf-8").includes(notesMarker(chat.id))) return file;
+		} catch {
+			/* unreadable: not ours */
+		}
+	}
+	return path.join(folder, `${base} (${chat.id}).md`);
 }
 
 export interface CourseNotesView {
@@ -91,12 +108,12 @@ const WRITER_SYSTEM = `You write a student's study notes for one step of a cours
 The notes are what the student re-reads before the exam instead of scrolling the chat. Write in Serbian, Latin script only.
 Keep every concept, definition, rule, example and piece of code that was taught for THIS step, organised and tidy:
 short paragraphs, **bold** key terms with one-line definitions, bullet lists for enumerations, fenced code blocks for code/HTML/SQL/CSS (verbatim), tables where they help.
-End with a "### Pitanja iz lekcije" section: each question the teacher asked for this step in bold, followed by the correct answer and the one-line reason (not the student's answer, not chit-chat).
+End with a "### Pitanja iz lekcije" section: each question the teacher asked for this step in bold, followed by the correct answer and the one-line reason, taken from the answer keys you are given (not the student's answer, not chit-chat). If a question has no key, write only what the transcript states.
 Leave out greetings, pacing talk, the course plan or schedule, how the lessons will be run, meta comments about the lesson, anything that belongs to other steps, and anything not actually taught. Do not invent material.
 Do NOT start with a heading for the step (the app adds it). Subheadings: only ### and ####, never # or ##. Output only the Markdown body.`;
 
 
-function writerPrompt(chat: ChatRecord, step: NoteStepView, transcript: string, needTitle: boolean): string {
+function writerPrompt(chat: ChatRecord, step: NoteStepView, transcript: string, needTitle: boolean, keys: string): string {
 	const node = chat.tree?.nodes.find((n) => n.id === step.id);
 	return [
 		`Course: ${toSerbianLatin(chat.title)}`,
@@ -104,6 +121,7 @@ function writerPrompt(chat: ChatRecord, step: NoteStepView, transcript: string, 
 		needTitle ? 'FIRST LINE of your reply: "Naziv kursa: <a short 1-4 word course name, e.g. Veb dizajn>", then a blank line, then the notes.' : "",
 		step.markdown ? `\nThe current notes for this step (update and extend them; keep what is still right):\n\n<<<\n${step.markdown}\n>>>` : "",
 		`\nThe lesson transcript for this step:\n\n<<<\n${transcript}\n>>>`,
+		keys ? `\nThe answer keys of the questions in this transcript (authoritative — use these for "Pitanja iz lekcije"):\n\n<<<\n${keys}\n>>>` : "",
 	]
 		.filter(Boolean)
 		.join("\n");
@@ -126,7 +144,7 @@ async function writeStep(chatId: string, stepId: string): Promise<void> {
 	if (!engine) throw new Error("Nije podešen model (Settings → Providers).");
 	const needTitle = !chat.notes?.courseTitle;
 	const { text } = await withBgLlmSlot(undefined, () =>
-		runSubagent([], { role: "teacher", engine, systemPrompt: WRITER_SYSTEM, prompt: writerPrompt(chat, step, transcript, needTitle), maxTurns: 1, chatId }),
+		runSubagent([], { role: "teacher", engine, systemPrompt: WRITER_SYSTEM, prompt: writerPrompt(chat, step, transcript, needTitle, questionKeys(slice).slice(0, 20_000)), maxTurns: 1, chatId }),
 	);
 	let body = text.trim();
 	let title: string | undefined;
@@ -144,14 +162,24 @@ async function writeStep(chatId: string, stepId: string): Promise<void> {
 	writeNotesFile(chatId);
 }
 
-/** Rewrite the course's .md file from the stored sections. */
+/** Rewrite the course's .md file from the stored sections. Never throws: the
+ *  sections are safe in the record; the file is a copy (OneDrive or an open
+ *  editor can hold it). Returns the path, or null when it could not be written. */
 export function writeNotesFile(chatId: string): string | null {
 	const chat = stores.chatStore.getChat(chatId);
 	if (!chat?.tree) return null;
 	const file = notesFilePath(chat);
-	fs.mkdirSync(path.dirname(file), { recursive: true });
-	writeFileAtomicSync(file, notesDocument(courseTitleOf(chat), noteSteps(chat.tree, chat.messages, chat.notes, currentStep(chat))));
-	return file;
+	try {
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		const doc = notesDocument(courseTitleOf(chat), noteSteps(chat.tree, chat.messages, chat.notes, currentStep(chat)), chat.id);
+		writeFileAtomicSync(file, doc, { allowInPlaceFallback: true });
+		if (chat.notes?.fileName !== path.basename(file)) stores.chatStore.updateNotes(chatId, (n) => (n.fileName = path.basename(file)));
+		return file;
+	} catch (e) {
+		lastError.set(chatId, `Fajl beleški nije sačuvan (${e instanceof Error ? e.message : String(e)}) — beleške su sačuvane u aplikaciji.`);
+		console.warn(`[notes] file ${file}: ${e instanceof Error ? e.message : e}`);
+		return null;
+	}
 }
 
 /** Write the given steps one after another (skips steps already in flight). */
@@ -215,8 +243,11 @@ export function addNoteExtra(chatId: string, stepId: string, extra: Omit<NoteExt
 export function revealNotesFile(chatId: string): boolean {
 	const file = writeNotesFile(chatId);
 	if (!file) return false;
-	const cmd = process.platform === "win32" ? ["explorer.exe", [`/select,${file}`]] : process.platform === "darwin" ? ["open", ["-R", file]] : ["xdg-open", [path.dirname(file)]];
-	spawn(cmd[0] as string, cmd[1] as string[], { detached: true, stdio: "ignore" }).unref();
+	if (process.platform === "win32") {
+		// Quoted so a comma in the name doesn't split the /select argument.
+		spawn("explorer.exe", [`/select,"${file}"`], { detached: true, stdio: "ignore", windowsVerbatimArguments: true }).unref();
+	} else if (process.platform === "darwin") spawn("open", ["-R", file], { detached: true, stdio: "ignore" }).unref();
+	else spawn("xdg-open", [path.dirname(file)], { detached: true, stdio: "ignore" }).unref();
 	return true;
 }
 

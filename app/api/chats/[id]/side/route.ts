@@ -1,4 +1,4 @@
-import { applySideAction, getChat, parseSideAction } from "@/src/server";
+import { applySideAction, getChat, healSidePending, parseSideAction } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +12,9 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { id } = await params;
-	const chat = getChat(id);
-	if (!chat) return Response.json({ error: "Not found" }, { status: 404 });
-	return Response.json({ threads: chat.sideThreads ?? [] });
+	if (!getChat(id)) return Response.json({ error: "Not found" }, { status: 404 });
+	healSidePending(id);
+	return Response.json({ threads: getChat(id)?.sideThreads ?? [] });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {

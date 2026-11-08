@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 /** Fork (topic notes): every teaching course with a plan — for the notes overview. */
 export async function GET() {
 	const courses = [];
-	for (const s of stores.chatStore.listChats()) {
-		const chat = stores.chatStore.getChat(s.id);
+	for (const id of stores.chatStore.listChatIds()) {
+		const chat = stores.chatStore.getChat(id);
 		if (!chat?.tree || chat.kind === "practice") continue;
 		const v = notesView(chat);
 		courses.push({

@@ -41,7 +41,7 @@ export { effectivePromptSegments, allSegmentPaths, readPromptOverride } from "..
 export * from "./keys.ts";
 export * from "./search.ts";
 export { authStore } from "../store/auth.ts";
-export { readStudyLog, recordStudySeconds } from "../store/study-time.ts";
+export { readStudyLog, readStudyLogSafe, recordStudySeconds } from "../store/study-time.ts";
 export * from "./settings-body.ts";
 export { fileAccessConfigurationError } from "./file-access.ts";
 export * from "./turn-liveness.ts";

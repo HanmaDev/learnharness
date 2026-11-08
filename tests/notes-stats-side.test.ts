@@ -153,3 +153,26 @@ describe("notes headings", () => {
 		assert.equal(demoteHeadings("## A\ntext\n# B\n```\n## code\n```\n### C"), "### A\ntext\n### B\n```\n## code\n```\n### C");
 	});
 });
+
+import { openQuestionSummary } from "../src/core/side-chat.ts";
+import { notesMarker, questionKeys } from "../src/core/notes.ts";
+describe("review fixes (notes/side)", () => {
+	it("the side agent is told the open question, never its key", () => {
+		const msgs = call("quiz", { nodeId: "a", question: "Koja boja?", options: [{ label: "Crvena", value: "r" }, { label: "Plava", value: "b" }], correctAnswer: "b", explanation: "jer" }, T0, "none");
+		const s = openQuestionSummary(msgs)!;
+		assert.match(s, /Koja boja\?/);
+		assert.match(s, /Crvena \| Plava/);
+		assert.doesNotMatch(s, /jer|"b"/);
+	});
+	it("the notes writer gets the real answers", () => {
+		const msgs = [
+			...call("quiz", { nodeId: "a", question: "Koja boja?", options: [{ label: "Crvena", value: "r" }, { label: "Plava", value: "b" }], correctAnswer: "b", explanation: "Nebo je plavo." }),
+			...call("explain", { nodeId: "a", question: "Šta je CSS?", correctAnswer: "Jezik za izgled." }),
+		];
+		const k = questionKeys(msgs);
+		assert.match(k, /Tačno: Plava/);
+		assert.match(k, /Zašto: Nebo je plavo\./);
+		assert.match(k, /Tačan odgovor: Jezik za izgled\./);
+		assert.equal(notesMarker("c1"), "<!-- learnharness:c1 -->");
+	});
+});

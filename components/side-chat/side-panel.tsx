@@ -109,8 +109,14 @@ export function SidePanel({
 		listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
 	}, [active?.messages.length, active?.messages.at(-1)?.pending]);
 
-	const act = async (body: object) => {
+	// One request per button at a time (a double click must not add twice).
+	const [inflight, setInflight] = useState<string | null>(null);
+	const act = async (body: { op: string; messageId?: string; threadId?: string }) => {
+		const key = `${body.op}:${body.messageId ?? body.threadId ?? ""}`;
+		if (inflight === key) return;
+		setInflight(key);
 		const r = await post(chatId, body);
+		setInflight(null);
 		if (r.error) setError(r.error);
 		else if (r.threads) setThreads(r.threads);
 	};
@@ -210,7 +216,7 @@ export function SidePanel({
 									<div className="mt-2 flex gap-2">
 										<button
 											type="button"
-											disabled={m.savedToNotes}
+											disabled={m.savedToNotes || inflight === `save-notes:${m.id}`}
 											onClick={() => void act({ op: "save-notes", threadId: active.id, messageId: m.id })}
 											className="cursor-pointer rounded-md border border-border px-2.5 py-1.5 font-ui text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:text-green-400"
 										>
@@ -218,7 +224,7 @@ export function SidePanel({
 										</button>
 										<button
 											type="button"
-											disabled={!!m.cardId}
+											disabled={!!m.cardId || inflight === `make-card:${m.id}`}
 											onClick={() => void act({ op: "make-card", threadId: active.id, messageId: m.id })}
 											className="cursor-pointer rounded-md border border-border px-2.5 py-1.5 font-ui text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:text-green-400"
 										>

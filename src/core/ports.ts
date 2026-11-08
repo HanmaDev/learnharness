@@ -61,6 +61,8 @@ export interface ChatStore {
 	savePlanTarget(id: string, target: PlanTarget | null): void;
 	/** Fork: change a course's card data in one read/merge/write. */
 	updateCards(id: string, change: (cards: CourseCards) => void): CourseCards;
+	/** Fork: the ids of every chat (cheap — no records parsed). */
+	listChatIds(): string[];
 	/** Fork: change a course's notes in one read/merge/write. */
 	updateNotes(id: string, change: (notes: CourseNotes) => void): CourseNotes;
 	/** Fork: change a session's side threads in one read/merge/write. */

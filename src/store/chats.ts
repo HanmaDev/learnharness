@@ -332,6 +332,15 @@ function updateSideThreads(id: string, change: (threads: SideThread[]) => void):
 	return threads;
 }
 
+/** Fork: the ids of every chat file (no parsing). */
+function listChatIds(): string[] {
+	try {
+		return fs.readdirSync(PATHS.chats).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+	} catch {
+		return [];
+	}
+}
+
 export const chatStore: ChatStore = {
 	createChat,
 	getChat,
@@ -343,6 +352,7 @@ export const chatStore: ChatStore = {
 	saveTree,
 	savePlanTarget,
 	updateCards,
+	listChatIds,
 	updateNotes,
 	updateSideThreads,
 	saveSettings,

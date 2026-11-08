@@ -16,6 +16,10 @@ export async function POST(req: Request) {
 		return Response.json({ error: `seconds must be 1-${MAX_HEARTBEAT_SECONDS}` }, { status: 400 });
 	}
 	const chatId = typeof body.chatId === "string" && getChat(body.chatId) ? body.chatId : null;
-	recordStudySeconds(body.date, seconds, chatId);
+	try {
+		recordStudySeconds(body.date, seconds, chatId);
+	} catch (e) {
+		return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 503 });
+	}
 	return Response.json({ ok: true });
 }

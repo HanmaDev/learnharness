@@ -9,6 +9,7 @@ import { runSubagent } from "../agent/subagents/pi-run.ts";
 import {
 	derivePlanStatusesLh,
 	emit,
+	openQuestionSummary,
 	planOutline,
 	redactOpenQuestion,
 	sessionMarkdown,
@@ -45,12 +46,18 @@ function threadPrompt(chat: ChatRecord, thread: SideThread): string {
 		.filter((m) => !m.pending && !m.error)
 		.map((m) => `${m.role === "user" ? "Student" : "You"}: ${m.quote ? `[about this part of the lesson: "${m.quote}"]\n` : ""}${m.text}`)
 		.join("\n\n");
+	const open = openQuestionSummary(chat.messages);
 	return [
 		`Course: ${toSerbianLatin(chat.title)}`,
 		`Plan:\n${planOutline(chat.tree)}`,
 		`The lesson so far (read-only):\n<<<\n${lessonContext(chat)}\n>>>`,
+		open
+			? `The question the student is answering in the lesson RIGHT NOW (its answer is hidden from you on purpose — never give its answer; explain ideas or hint instead):\n<<<\n${open}\n>>>`
+			: "",
 		`The side conversation (answer the student's last message):\n\n${history}`,
-	].join("\n\n");
+	]
+		.filter(Boolean)
+		.join("\n\n");
 }
 
 function setThread(chatId: string, threadId: string, change: (t: SideThread) => void) {
@@ -61,7 +68,27 @@ function setThread(chatId: string, threadId: string, change: (t: SideThread) => 
 	emit("record-changed", { chatId });
 }
 
+/** Answers being written by this process (a pending one not in here was cut
+ *  off by a restart and will never finish). */
+const running = new Set<string>();
+
+/** Mark pending answers whose work died with a restart as failed. */
+export function healSidePending(chatId: string): void {
+	const chat = stores.chatStore.getChat(chatId);
+	const stale = (chat?.sideThreads ?? []).some((t) => t.messages.some((m) => m.pending && !running.has(m.id)));
+	if (!stale) return;
+	stores.chatStore.updateSideThreads(chatId, (threads) => {
+		for (const t of threads)
+			for (const m of t.messages)
+				if (m.pending && !running.has(m.id)) {
+					delete m.pending;
+					m.error = "Prekinuto — aplikacija je ponovo pokrenuta. Pitaj ponovo.";
+				}
+	});
+}
+
 async function answer(chatId: string, threadId: string, answerId: string) {
+	running.add(answerId);
 	try {
 		const chat = stores.chatStore.getChat(chatId);
 		const thread = chat?.sideThreads?.find((t) => t.id === threadId);
@@ -85,12 +112,15 @@ async function answer(chatId: string, threadId: string, answerId: string) {
 				m.error = e instanceof Error ? e.message : String(e);
 			}
 		});
+	} finally {
+		running.delete(answerId);
 	}
 }
 
 /** Ask (a new thread when `threadId` is absent). Returns the thread id at once;
  *  the answer lands in the record when ready (record-changed). */
 export function askSideQuestion(chatId: string, input: { threadId?: string; text: string; quote?: string }): { threadId: string } | string {
+	healSidePending(chatId);
 	const chat = stores.chatStore.getChat(chatId);
 	if (!chat) return "Not found";
 	const text = input.text.trim().slice(0, MAX_QUESTION_CHARS);

@@ -80,6 +80,29 @@ export function redactOpenQuestion(messages: readonly LhMessage[]): LhMessage[] 
 	});
 }
 
+/** The question the learner is answering right now, WITHOUT its answer key —
+ *  the lesson markdown never renders an unanswered question, so the side
+ *  agent would otherwise not know it exists (and could give it away). */
+export function openQuestionSummary(messages: readonly LhMessage[]): string | null {
+	const open = openQuestionCallId(messages);
+	if (!open) return null;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const content = (messages[i] as { role?: string; content?: unknown }).content;
+		if ((messages[i] as { role?: string }).role !== "assistant" || !Array.isArray(content)) continue;
+		for (const b of content as Array<{ type?: string; id?: string; name?: string; arguments?: unknown }>) {
+			if (b.type !== "toolCall" || b.id !== open) continue;
+			const a = (b.arguments ?? {}) as { question?: unknown; options?: unknown; format?: unknown };
+			const parts = [`Type: ${b.name}${typeof a.format === "string" ? ` (${a.format})` : ""}`, `Question: ${typeof a.question === "string" ? a.question : "(no text)"}`];
+			if (Array.isArray(a.options)) {
+				const labels = (a.options as Array<{ label?: unknown }>).map((o) => (typeof o?.label === "string" ? o.label : "")).filter(Boolean);
+				if (labels.length) parts.push(`Choices: ${labels.join(" | ")}`);
+			}
+			return parts.join("\n");
+		}
+	}
+	return null;
+}
+
 /** The plan as a short outline for the side agent. */
 export function planOutline(tree: PlanTree | undefined): string {
 	if (!tree) return "(no plan yet)";
