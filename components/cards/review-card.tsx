@@ -84,6 +84,8 @@ export function ReviewCard({
 	const reveal = (o: ReviewOutcome) => {
 		setOutcome(o);
 		setRevealed(true);
+		// The answer field keeps focus otherwise, and 1-4 would type nothing.
+		if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 	};
 
 	return (

@@ -9,15 +9,11 @@ import { XIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import { cn } from "@/lib/utils";
-import { toSerbianLatin, type CardDraft } from "@/src/core";
+import type { CardDraft } from "@/src/core";
 import { notifyCardsChanged, type CourseCardsView } from "./use-cards";
 
 export function NewCardsDialog({ chatId, view, onClose }: { chatId: string; view: CourseCardsView; onClose: () => void }) {
-	const steps = useMemo(() => {
-		const m = new Map<string, string>();
-		for (const c of view.cards) m.set(c.nodeId, toSerbianLatin(c.nodeTitle ?? c.nodeId));
-		return [...m.entries()];
-	}, [view.cards]);
+	const steps = useMemo(() => view.steps.map((s) => [s.id, s.title] as const), [view.steps]);
 	const [nodeId, setNodeId] = useState("weak");
 	const [count, setCount] = useState(5);
 	const [phase, setPhase] = useState<"pick" | "working" | "review" | "saving">("pick");

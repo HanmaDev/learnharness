@@ -118,7 +118,7 @@ describe("queue, limits, exam cap, forecast", () => {
 		// Exam on 5 Nov: cap = start of 4 Nov.
 		const cap = examCap("2026-11-05", now)!;
 		assert.equal(new Date(cap).getDate(), 4);
-		const p = previewRatings({ messages: msgs, cards: undefined, settings, examDate: "2026-11-05", now }, built[1]!.id)!;
+		const p = previewRatings({ messages: msgs, cards: undefined, settings, examDate: "2026-11-05", now }, [built[1]!.id])[built[1]!.id]!;
 		assert.ok(p[4] <= cap, "even Lako stays before the exam");
 		assert.equal(examCap("2026-11-02", now), null, "exam already past: no cap");
 	});
@@ -164,9 +164,13 @@ describe("Serbian Latin for old Cyrillic records", () => {
 describe("learn ahead", () => {
 	it("a learning card due within 20 min is shown when nothing else is left", () => {
 		const msgs = ask("quiz", quiz("a", "L"), T0, { correct: false });
-		const built = buildCards({ messages: msgs, cards: undefined, settings, now: T0 + MIN + 30_000 });
+		const id = buildCards({ messages: msgs, cards: undefined, settings, now: T0 }).find(() => true)!.id;
+		// Reviewed next day with Ponovo → relearning, back in minutes.
+		const cards: CourseCards = { states: { [id]: { reviews: [{ at: new Date(T0 + DAY).toISOString(), rating: 1 }] } } };
+		const now = T0 + DAY + 30_000;
+		const built = buildCards({ messages: msgs, cards, settings, now });
 		assert.equal(built[0]!.status, "learning");
-		const q = cardQueue(built, undefined, settings, T0 + MIN + 30_000);
+		const q = cardQueue(built, cards, settings, now);
 		assert.deepEqual(q.ids, [built[0]!.id], "Ponovo → back within minutes, learned ahead");
 		assert.equal(q.nextDue, null);
 	});
@@ -194,3 +198,49 @@ describe("AI card drafts", () => {
 		assert.equal(typeof parseCardAction({ op: "add", drafts: [] }), "string");
 	});
 });
+
+
+describe("review fixes (2026-11-08)", () => {
+	it("the exam cap brings a card back on the day before the exam", () => {
+		// Answered right on 1 Nov, then Lako twice: due far after a 20 Nov exam.
+		const msgs = ask("quiz", quiz("a", "X"), T0, { correct: true });
+		const id = buildCards({ messages: msgs, cards: undefined, settings, now: T0 }).find(() => true)!.id;
+		const cards: CourseCards = { states: { [id]: { reviews: [{ at: new Date(T0 + 3 * DAY).toISOString(), rating: 4 }, { at: new Date(T0 + 10 * DAY).toISOString(), rating: 4 }] } } };
+		const at = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
+		const dueOn = (now: number) => {
+			const built = buildCards({ messages: msgs, cards, settings, examDate: "2026-11-20", now });
+			return { due: built[0]!.due!, queued: cardQueue(built, cards, settings, now).ids.includes(id) };
+		};
+		const d17 = dueOn(at(17, 12));
+		assert.equal(new Date(d17.due).getDate(), 19, "capped to the start of the 19th");
+		assert.equal(d17.queued, false, "not yet on the 17th");
+		assert.equal(dueOn(at(19, 0) + 60_000).queued, true, "due right after midnight on the 19th");
+		assert.equal(dueOn(at(19, 23)).queued, true, "still due late on the 19th");
+		const f = cardForecast({ messages: msgs, cards, settings, examDate: "2026-11-20", now: at(17, 12) });
+		assert.equal(f.untilExam, 1, "the capped review counts");
+		assert.equal(examCap("2026-11-20", at(20, 9)), null, "exam day: no cap");
+	});
+
+	it("chat answers come back in days, so they don't flood today's queue", () => {
+		const msgs = Array.from({ length: 30 }, (_, i) => ask("quiz", quiz("a", `C${i}`), T0, { correct: true })).flat();
+		const now = T0 + 2 * 60 * MIN;
+		const built = buildCards({ messages: msgs, cards: undefined, settings, now });
+		assert.ok(built.every((c) => c.status === "review" && c.due! > now + DAY), "right answers: due in a few days");
+		assert.equal(cardQueue(built, undefined, settings, now).ids.length, 0);
+		const wrong = buildCards({ messages: ask("quiz", quiz("a", "W"), T0, { correct: false }), cards: undefined, settings, now: T0 + DAY + 2 * 60 * MIN });
+		assert.equal(cardQueue(wrong, undefined, settings, T0 + DAY + 2 * 60 * MIN).ids.length, 1, "a wrong one is due the next day");
+	});
+
+	it("a right but unsure chat answer (< 50%) comes back sooner", () => {
+		const sure = buildCards({ messages: ask("quiz", quiz("a", "S"), T0, { correct: true, confidence: 90 }), cards: undefined, settings, now: T0 + MIN })[0]!;
+		const unsure = buildCards({ messages: ask("quiz", quiz("a", "U"), T0, { correct: true, confidence: 30 }), cards: undefined, settings, now: T0 + MIN })[0]!;
+		assert.ok(unsure.due! < sure.due!);
+	});
+
+	it("prototype keys are never card ids", () => {
+		assert.equal(ownStateOf({ states: {} }, "__proto__"), undefined);
+		assert.equal(ownStateOf({ states: {} }, "constructor"), undefined);
+	});
+});
+
+import { ownState as ownStateOf } from "../src/core/cards.ts";

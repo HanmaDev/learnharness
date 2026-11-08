@@ -3,14 +3,25 @@
  *  (mockup docs/fork-plans/mockups/kartice-overview-v1.png). */
 import Link from "next/link";
 import { TopBar } from "@/components/top-bar";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Toggle } from "@/components/settings/controls";
 import { courseName, examLabel } from "./deck-view";
 import { ForecastChart, ForecastSummary } from "./forecast";
-import { notifyCardsChanged, saveCardSettings, useCardsOverview } from "./use-cards";
+import { notifyCardsChanged, saveCardSettings, useCardsOverview, type CardsOverview } from "./use-cards";
 
 export function CardsOverviewView() {
 	const { data, error } = useCardsOverview();
+	// Each save builds on the last one, even before the refetch lands.
+	const latest = useRef<CardsOverview["settings"] | null>(null);
+	if (data && latest.current === null) latest.current = data.settings;
+	const [saveError, setSaveError] = useState(false);
+	const save = async (patch: Partial<CardsOverview["settings"]>) => {
+		const next = { ...(latest.current ?? data!.settings), ...patch };
+		latest.current = next;
+		const ok = await saveCardSettings(next);
+		setSaveError(!ok);
+		if (!ok) latest.current = null;
+	};
 	const setCourse = async (chatId: string, enabled: boolean) => {
 		await fetch(`/api/chats/${encodeURIComponent(chatId)}/cards`, {
 			method: "POST",
@@ -81,19 +92,20 @@ export function CardsOverviewView() {
 							data-testid="card-settings"
 						>
 							<span className="flex items-center gap-2">
-								<Toggle checked={data.globalEnabled} label="kartice uključene" onChange={(v) => void saveCardSettings({ ...data.settings, enabled: v })} />
+								<Toggle checked={data.globalEnabled} label="kartice uključene" onChange={(v) => void save({ enabled: v })} />
 								Kartice {data.globalEnabled ? "uključene" : "isključene"}
 							</span>
-							<NumberSetting label="Nove kartice dnevno" value={data.settings.newPerDay} onCommit={(v) => void saveCardSettings({ ...data.settings, newPerDay: Math.min(500, Math.max(0, v)) })} />
+							{saveError && <span className="text-red-400 normal-case">Čuvanje nije uspelo.</span>}
+							<NumberSetting label="Nove kartice dnevno" value={data.settings.newPerDay} onCommit={(v) => void save({ newPerDay: Math.min(500, Math.max(0, v)) })} />
 							<NumberSetting
 								label="Najviše ponavljanja dnevno"
 								value={data.settings.maxReviewsPerDay}
-								onCommit={(v) => void saveCardSettings({ ...data.settings, maxReviewsPerDay: Math.min(5000, Math.max(1, v)) })}
+								onCommit={(v) => void save({ maxReviewsPerDay: Math.min(5000, Math.max(1, v)) })}
 							/>
 							<NumberSetting
 								label="Cilj pamćenja %"
 								value={Math.round(data.settings.retention * 100)}
-								onCommit={(v) => void saveCardSettings({ ...data.settings, retention: Math.min(97, Math.max(70, v)) / 100 })}
+								onCommit={(v) => void save({ retention: Math.min(97, Math.max(70, v)) / 100 })}
 							/>
 						</div>
 					)}

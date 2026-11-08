@@ -8,6 +8,9 @@ import {
 	cardQueue,
 	isCardRating,
 	normalizeCardSettings,
+	ownState,
+	toSerbianLatin,
+	type CardState,
 	previewRatings,
 	type Card,
 	type CardForecast,
@@ -36,11 +39,7 @@ export function courseCardsView(chat: ChatRecord, now = Date.now()): CourseCards
 	const input = courseInput(chat, settings, now);
 	const cards = buildCards(input);
 	const queue = cardQueue(cards, chat.cards, settings, now);
-	const previews: CourseCardsView["previews"] = {};
-	for (const id of queue.ids) {
-		const p = previewRatings(input, id);
-		if (p) previews[id] = p;
-	}
+	const previews = previewRatings(input, queue.ids);
 	return {
 		chatId: chat.id,
 		title: chat.title,
@@ -48,6 +47,7 @@ export function courseCardsView(chat: ChatRecord, now = Date.now()): CourseCards
 		globalEnabled: settings.enabled,
 		settings,
 		examDate: input.examDate,
+		steps: (chat.tree?.nodes ?? []).map((n) => ({ id: n.id, title: toSerbianLatin(n.title) })),
 		cards,
 		queue,
 		previews,
@@ -83,6 +83,9 @@ export function cardsOverview(now = Date.now()): { globalEnabled: boolean; setti
 	}
 	return { globalEnabled: settings.enabled, settings, decks };
 }
+
+/** Never valid card ids (object prototype keys). */
+const RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 export type CardAction =
 	| { op: "review"; cardId: string; rating: CardRating; correct?: boolean }
@@ -151,11 +154,12 @@ export function applyCardAction(chat: ChatRecord, action: CardAction, now = Date
 		});
 		return true;
 	}
-	const exists = buildCards(courseInput(chat, cardSettings(), now)).some((c) => c.id === action.cardId) || chat.cards?.states?.[action.cardId] !== undefined;
+	if (RESERVED_KEYS.has(action.cardId)) return false;
+	const exists = buildCards(courseInput(chat, cardSettings(), now)).some((c) => c.id === action.cardId) || ownState(chat.cards, action.cardId) !== undefined;
 	if (!exists) return false;
 	stores.chatStore.updateCards(chat.id, (c) => {
 		const states = (c.states ??= {});
-		const state = (states[action.cardId] ??= {});
+		const state: CardState = ownState(c, action.cardId) ?? (states[action.cardId] = {});
 		if (action.op === "review") {
 			(state.reviews ??= []).push({ at: new Date(now).toISOString(), rating: action.rating, ...(action.correct !== undefined ? { correct: action.correct } : {}) });
 			return;

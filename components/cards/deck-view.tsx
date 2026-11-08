@@ -116,7 +116,14 @@ function ReviewTab({ view, onReview, onShowAll }: { view: CourseCardsView; onRev
 	const done = useRef(0);
 	const [doneCount, setDoneCount] = useState(0);
 	const byId = useMemo(() => new Map(view.cards.map((c) => [c.id, c])), [view.cards]);
-	const currentId = view.queue.ids[0];
+	// The open card stays put until it is rated: a refresh (timer, push) that
+	// reorders the queue must never swap the card mid-answer.
+	const [heldId, setHeldId] = useState<string | undefined>(undefined);
+	const held = heldId !== undefined && view.queue.ids.includes(heldId) ? heldId : undefined;
+	const currentId = held ?? view.queue.ids[0];
+	useEffect(() => {
+		if (currentId !== heldId) setHeldId(currentId);
+	}, [currentId, heldId]);
 	const card = currentId ? byId.get(currentId) : undefined;
 	const total = doneCount + view.queue.ids.length;
 
@@ -128,6 +135,8 @@ function ReviewTab({ view, onReview, onShowAll }: { view: CourseCardsView; onRev
 			if (next) {
 				done.current++;
 				setDoneCount(done.current);
+				// Next card: the head of the new queue, not the one just rated.
+				setHeldId(next.queue.ids.find((id) => id !== card.id) ?? next.queue.ids[0]);
 			}
 			setBusy(false);
 		},

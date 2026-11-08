@@ -103,6 +103,8 @@ interface CallBlock {
 
 interface ChatAnswer {
 	at: number;
+	/** The learner's stated confidence (quiz, 0-100), when given. */
+	confidence?: number;
 	/** Graded by the app (quiz / graded exercise). */
 	correct?: boolean;
 	skipped: boolean;
@@ -119,6 +121,7 @@ function answersByCall(messages: readonly LhMessage[]): Map<string, ChatAnswer> 
 			dismissed?: unknown;
 			setAside?: unknown;
 			answeredAt?: unknown;
+			confidence?: unknown;
 			exercise?: { result?: { graded?: unknown; correct?: unknown } };
 		};
 		const at = typeof d.answeredAt === "string" ? Date.parse(d.answeredAt) : (r.timestamp ?? 0);
@@ -127,7 +130,8 @@ function answersByCall(messages: readonly LhMessage[]): Map<string, ChatAnswer> 
 		if (typeof d.correct === "boolean") correct = d.correct;
 		else if (d.exercise?.result && d.exercise.result.graded !== false && typeof d.exercise.result.correct === "boolean") correct = d.exercise.result.correct;
 		if (d.dontKnow === true) correct = false;
-		out.set(r.toolCallId, { at: Number.isFinite(at) ? at : (r.timestamp ?? 0), correct, skipped });
+		const confidence = typeof d.confidence === "number" && Number.isFinite(d.confidence) ? d.confidence : undefined;
+		out.set(r.toolCallId, { at: Number.isFinite(at) ? at : (r.timestamp ?? 0), correct, skipped, ...(confidence !== undefined ? { confidence } : {}) });
 	}
 	return out;
 }
@@ -145,7 +149,6 @@ interface RawCard {
 /** Every card the course has (deleted ones excluded). */
 function rawCards(messages: readonly LhMessage[], cards: CourseCards | undefined): RawCard[] {
 	const answers = answersByCall(messages);
-	const states = cards?.states ?? {};
 	const out: RawCard[] = [];
 	for (const m of messages) {
 		if ((m as { role?: string }).role !== "assistant") continue;
@@ -158,7 +161,7 @@ function rawCards(messages: readonly LhMessage[], cards: CourseCards | undefined
 			// Only questions the learner got to: answered (or skipped) ones.
 			// A rejected call has an error result; an open one has none yet.
 			if (!answers.has(block.id)) continue;
-			if (states[block.id]?.deleted) continue;
+			if (ownState(cards, block.id)?.deleted) continue;
 			out.push({
 				id: block.id,
 				source: "chat",
@@ -171,10 +174,16 @@ function rawCards(messages: readonly LhMessage[], cards: CourseCards | undefined
 		}
 	}
 	for (const g of cards?.generated ?? []) {
-		if (states[g.id]?.deleted) continue;
+		if (ownState(cards, g.id)?.deleted) continue;
 		out.push({ id: g.id, source: "generated", tool: g.tool, nodeId: g.nodeId, args: g.args, createdAt: Date.parse(g.createdAt) || 0 });
 	}
 	return out;
+}
+
+/** A card's stored state — own keys only (a "__proto__" id is never a card). */
+export function ownState(cards: CourseCards | undefined, id: string): CardState | undefined {
+	const states = cards?.states;
+	return states && Object.prototype.hasOwnProperty.call(states, id) ? states[id] : undefined;
 }
 
 // ─── Scheduling ────────────────────────────────────────────────────────────
@@ -185,30 +194,49 @@ export function scheduler(settings: CardSettings): FSRS {
 	return fsrs({ request_retention: settings.retention, enable_fuzz: false, maximum_interval: 3650 });
 }
 
-/** Local midnight of a YYYY-MM-DD date. */
-function localMidnight(date: string): number {
-	const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-	return new Date(y, m - 1, d).getTime();
+/** For the chat answer only: no minute-long learning steps, so a question
+ *  answered in the chat comes back in days (wrong → tomorrow, right → a few
+ *  days), not "due now" for every past question. */
+function chatScheduler(settings: CardSettings): FSRS {
+	return fsrs({ request_retention: settings.retention, enable_fuzz: false, maximum_interval: 3650, enable_short_term: false });
 }
 
-/** The latest moment a card may be due: the start of the day before the exam. */
+/** Local midnight of a YYYY-MM-DD date, `shift` days later (DST-safe). */
+function localMidnight(date: string, shift = 0): number {
+	const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+	return new Date(y, m - 1, d + shift).getTime();
+}
+
+/** The latest moment a card may be due: the start of the day before the
+ *  exam. Active until the exam day begins — on the day before, a capped
+ *  card is simply due (cap <= now). */
 export function examCap(examDate: string | null | undefined, now: number): number | null {
 	if (!examDate) return null;
-	const cap = localMidnight(examDate) - DAY;
-	return cap > now ? cap : null;
+	return now < localMidnight(examDate) ? localMidnight(examDate, -1) : null;
+}
+
+/** Start of the exam day (null without a date). */
+function examStart(examDate: string | null | undefined): number | null {
+	return examDate ? localMidnight(examDate) : null;
 }
 
 const capDue = (due: number, cap: number | null) => (cap !== null && due > cap ? cap : due);
 
+/** The chat answer as a rating: wrong → Ponovo, right but unsure (< 50%) → Teško, right → Dobro. */
+function chatRating(a: ChatAnswer): Rating.Again | Rating.Hard | Rating.Good {
+	if (!a.correct) return Rating.Again;
+	return a.confidence !== undefined && a.confidence < 50 ? Rating.Hard : Rating.Good;
+}
+
 /** Replay one card's reviews (the chat answer first, when graded). */
-function replay(raw: RawCard, state: CardState | undefined, f: FSRS): { card: FsrsCard; reviews: number; last: number | null; fromChat: boolean } {
+function replay(raw: RawCard, state: CardState | undefined, f: FSRS, fChat: FSRS): { card: FsrsCard; reviews: number; last: number | null; fromChat: boolean } {
 	let card = createEmptyCard(new Date(raw.createdAt));
 	let reviews = 0;
 	let last: number | null = null;
 	let fromChat = false;
 	const a = raw.chatAnswer;
 	if (a && !a.skipped && typeof a.correct === "boolean") {
-		card = f.next(card, new Date(a.at), a.correct ? Rating.Good : Rating.Again).card;
+		card = fChat.next(card, new Date(a.at), chatRating(a)).card;
 		reviews++;
 		last = a.at;
 		fromChat = true;
@@ -235,11 +263,12 @@ export interface BuildCardsInput {
 /** All cards of a course with their current schedule. */
 export function buildCards({ messages, cards, tree, settings, examDate, now }: BuildCardsInput): Card[] {
 	const f = scheduler(settings);
+	const fChat = chatScheduler(settings);
 	const titles = new Map((tree?.nodes ?? []).map((n) => [n.id, n.title]));
 	const cap = examCap(examDate, now);
 	return rawCards(messages, cards).map((raw) => {
-		const state = cards?.states?.[raw.id];
-		const { card, reviews, last, fromChat } = replay(raw, state, f);
+		const state = ownState(cards, raw.id);
+		const { card, reviews, last, fromChat } = replay(raw, state, f, fChat);
 		const isNew = reviews === 0;
 		let status: CardStatus = isNew ? "new" : card.state === State.Review ? "review" : "learning";
 		if (state?.suspended) status = "suspended";
@@ -275,7 +304,7 @@ function todayCounts(cards: CourseCards | undefined, built: readonly Card[], now
 	let reviewed = 0;
 	let introduced = 0;
 	for (const c of built) {
-		const rs = cards?.states?.[c.id]?.reviews ?? [];
+		const rs = ownState(cards, c.id)?.reviews ?? [];
 		const today = rs.filter((r) => Date.parse(r.at) >= start);
 		reviewed += today.length;
 		// Introduced today: its very first review (no graded chat answer) is today.
@@ -320,16 +349,25 @@ export function cardQueue(built: readonly Card[], cards: CourseCards | undefined
 	return { ids: [...dueIds, ...ahead, ...fresh.map((c) => c.id)], dueCount: dueIds.length + ahead.length, newCount: fresh.length, reviewedToday: reviewed, nextDue };
 }
 
-/** When each rating would bring the card back (for the buttons). */
-export function previewRatings(raw: Pick<BuildCardsInput, "messages" | "cards" | "settings" | "examDate" | "now">, cardId: string): Record<CardRating, number> | null {
-	const f = scheduler(raw.settings);
-	const r = rawCards(raw.messages, raw.cards).find((c) => c.id === cardId);
-	if (!r) return null;
-	const { card } = replay(r, raw.cards?.states?.[cardId], f);
-	const cap = examCap(raw.examDate, raw.now);
-	const next = f.repeat(card, new Date(raw.now));
-	const out = {} as Record<CardRating, number>;
-	for (const g of CARD_RATINGS) out[g] = capDue(next[g as unknown as Rating.Again].card.due.getTime(), cap);
+/** When each rating would bring each card back (for the buttons) — one
+ *  transcript pass for all the ids. */
+export function previewRatings(
+	input: Pick<BuildCardsInput, "messages" | "cards" | "settings" | "examDate" | "now">,
+	cardIds: readonly string[],
+): Record<string, Record<CardRating, number>> {
+	const f = scheduler(input.settings);
+	const fChat = chatScheduler(input.settings);
+	const want = new Set(cardIds);
+	const cap = examCap(input.examDate, input.now);
+	const out: Record<string, Record<CardRating, number>> = {};
+	for (const r of rawCards(input.messages, input.cards)) {
+		if (!want.has(r.id)) continue;
+		const { card } = replay(r, ownState(input.cards, r.id), f, fChat);
+		const next = f.repeat(card, new Date(input.now));
+		const one = {} as Record<CardRating, number>;
+		for (const g of CARD_RATINGS) one[g] = capDue(next[g as unknown as Rating.Again].card.due.getTime(), cap);
+		out[r.id] = one;
+	}
 	return out;
 }
 
@@ -344,28 +382,33 @@ export interface CardForecast {
 export function cardForecast(input: BuildCardsInput, days = 14): CardForecast {
 	const { now, settings } = input;
 	const built = buildCards(input);
-	const start = dayStart(now);
+	const today = dayStart(now);
 	const counts = new Array<number>(days).fill(0);
 	for (const c of built) {
 		if (c.status !== "learning" && c.status !== "review") continue;
-		const i = Math.max(0, Math.floor((c.due! - start) / DAY));
+		const i = Math.max(0, Math.floor((c.due! - today) / DAY));
 		if (i < days) counts[i]!++;
 	}
 	let untilExam: number | null = null;
 	const cap = examCap(input.examDate, now);
-	if (cap !== null) {
-		// Simulate "Dobro" on every review until the day before the exam.
+	const start = examStart(input.examDate);
+	if (cap !== null && start !== null) {
+		// Simulate "Dobro" on every review before the exam day. A review due
+		// after the cap is pulled back to it; once a card has been reviewed
+		// on/after the cap, its next one falls after the exam.
 		const f = scheduler(settings);
+		const fChat = chatScheduler(settings);
 		untilExam = 0;
 		for (const raw of rawCards(input.messages, input.cards)) {
-			const state = input.cards?.states?.[raw.id];
+			const state = ownState(input.cards, raw.id);
 			if (state?.suspended || state?.known) continue;
-			let { card } = replay(raw, state, f);
-			let at = Math.max(now, card.due.getTime());
-			for (let guard = 0; at <= cap && guard < 50; guard++) {
+			let { card } = replay(raw, state, f, fChat);
+			let at = Math.max(now, capDue(card.due.getTime(), cap));
+			for (let guard = 0; at < start && guard < 50; guard++) {
 				untilExam++;
+				if (at >= cap) break;
 				card = f.next(card, new Date(at), Rating.Good).card;
-				at = card.due.getTime();
+				at = Math.max(at, capDue(card.due.getTime(), cap));
 			}
 		}
 	}
@@ -419,6 +462,8 @@ export interface CourseCardsView {
 	globalEnabled: boolean;
 	settings: CardSettings;
 	examDate: string | null;
+	/** The plan's steps (Latin titles), for "Nova pitanja". */
+	steps: Array<{ id: string; title: string }>;
 	cards: Card[];
 	queue: CardQueue;
 	/** For each queued card: when each rating would bring it back (ms). */

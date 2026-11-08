@@ -59,8 +59,63 @@ function useRefetching<T>(url: string | null, onlyChat?: string) {
 	return { data, setData, error, reload: load };
 }
 
+/** One overview fetch for the whole window (the sidebar entry and the
+ *  header chip share it); pushes and timers coalesce into one request. */
+const overview = {
+	data: null as CardsOverview | null,
+	error: null as string | null,
+	listeners: new Set<() => void>(),
+	timer: 0 as number | ReturnType<typeof setTimeout>,
+	inFlight: false,
+	again: false,
+};
+async function loadOverview() {
+	if (overview.inFlight) {
+		overview.again = true;
+		return;
+	}
+	overview.inFlight = true;
+	try {
+		const res = await fetch("/api/cards", { cache: "no-store" });
+		if (!res.ok) throw new Error(`${res.status}`);
+		overview.data = (await res.json()) as CardsOverview;
+		overview.error = null;
+	} catch (e) {
+		overview.error = e instanceof Error ? e.message : String(e);
+	} finally {
+		overview.inFlight = false;
+		for (const l of overview.listeners) l();
+		if (overview.again) {
+			overview.again = false;
+			void loadOverview();
+		}
+	}
+}
+function scheduleOverview(delay = 800) {
+	clearTimeout(overview.timer as ReturnType<typeof setTimeout>);
+	overview.timer = setTimeout(() => void loadOverview(), delay);
+}
+
 export function useCardsOverview() {
-	return useRefetching<CardsOverview>("/api/cards");
+	const [, force] = useState(0);
+	useEffect(() => {
+		const l = () => force((n) => n + 1);
+		overview.listeners.add(l);
+		if (overview.listeners.size === 1) {
+			void loadOverview();
+		}
+		const onChanged = () => scheduleOverview(0);
+		window.addEventListener(CARDS_CHANGED, onChanged);
+		const tick = window.setInterval(() => scheduleOverview(), 60_000);
+		return () => {
+			overview.listeners.delete(l);
+			window.removeEventListener(CARDS_CHANGED, onChanged);
+			window.clearInterval(tick);
+		};
+	}, []);
+	useServerEvent("record-changed", () => scheduleOverview());
+	useServerResync(() => scheduleOverview(0));
+	return { data: overview.data, error: overview.error, reload: () => scheduleOverview(0) };
 }
 
 export function useCourseCards(chatId: string) {

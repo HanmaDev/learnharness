@@ -62,7 +62,8 @@ export function targetNodes(chat: ChatRecord, cards: readonly Card[], nodeId: st
 	const misses = new Map<string, number>();
 	for (const c of cards) misses.set(c.nodeId, (misses.get(c.nodeId) ?? 0) + c.lapses + (c.status === "learning" ? 1 : 0));
 	const ranked = [...misses.entries()].filter(([id, n]) => n > 0 && ids.includes(id)).sort((a, b) => b[1] - a[1]);
-	return (ranked.length ? ranked : [...new Set(cards.map((c) => c.nodeId))].map((id) => [id, 0] as const)).slice(0, 3).map(([id]) => id);
+	const fallback = [...new Set(cards.map((c) => c.nodeId))].filter((id) => ids.includes(id));
+	return (ranked.length ? ranked.map(([id]) => id) : fallback).slice(0, 3);
 }
 
 function prompt(chat: ChatRecord, nodes: string[], existing: readonly Card[], count: number): string {
