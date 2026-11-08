@@ -82,11 +82,11 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 						{m.analysis ? (
 							<dl className="mt-3 grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2 text-base">
 								<dt className="font-ui text-xs uppercase tracking-widest text-muted-foreground">Šta nije u redu</dt>
-								<dd className="text-foreground/90">{m.analysis.whatWentWrong}</dd>
+								<dd className="min-w-0 text-foreground/90"><ToolContentResponse className="lh-prose block">{m.analysis.whatWentWrong}</ToolContentResponse></dd>
 								<dt className="font-ui text-xs uppercase tracking-widest text-muted-foreground">Tačno</dt>
-								<dd className="text-green-400">{m.analysis.correctVersion}</dd>
+								<dd className="min-w-0 text-green-400"><ToolContentResponse className="lh-prose block">{m.analysis.correctVersion}</ToolContentResponse></dd>
 								<dt className="font-ui text-xs uppercase tracking-widest text-muted-foreground">Pravilo</dt>
-								<dd className="font-semibold text-foreground">{m.analysis.rule}</dd>
+								<dd className="min-w-0 font-semibold text-foreground"><ToolContentResponse className="lh-prose block">{m.analysis.rule}</ToolContentResponse></dd>
 							</dl>
 						) : (
 							<p className="mt-3 text-sm text-muted-foreground">{m.failed ? "Analiza nije uspela — klikni „Ponovi analizu”." : "Čeka analizu…"}</p>
