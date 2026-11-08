@@ -122,16 +122,21 @@ export function SidePanel({
 			data-testid="side-panel"
 			aria-label="Pitanje sa strane"
 		>
-			<div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-				<span className="shrink-0 font-ui text-xs uppercase tracking-widest text-muted-foreground">Pitanje sa strane</span>
-				<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+			<div className="flex flex-col gap-2.5 border-b border-border px-4 pt-3 pb-3">
+				<div className="flex items-center justify-between">
+					<span className="font-ui text-sm uppercase tracking-widest text-foreground/85">Pitanje sa strane</span>
+					<button type="button" aria-label="Zatvori panel" onClick={onClose} className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground">
+						<XIcon className="size-4" />
+					</button>
+				</div>
+				<div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
 					{open.map((t) => (
-						<span key={t.id} className={cn("flex shrink-0 items-center rounded-md border text-xs", t.id === activeId ? "border-green-500/80! bg-green-500/10 text-foreground" : "border-border text-muted-foreground")}>
-							<button type="button" onClick={() => setActiveId(t.id)} className="max-w-36 cursor-pointer truncate px-2 py-1">
+						<span key={t.id} className={cn("flex shrink-0 items-center rounded-md border text-sm", t.id === activeId ? "border-green-500/80! bg-green-500/10 text-foreground" : "border-border text-muted-foreground")}>
+							<button type="button" onClick={() => setActiveId(t.id)} className="max-w-44 cursor-pointer truncate px-3 py-1.5">
 								{t.title}
 							</button>
-							<button type="button" aria-label="Zatvori temu" onClick={() => void act({ op: "close", threadId: t.id })} className="cursor-pointer px-1 py-1 text-muted-foreground hover:text-foreground">
-								<XIcon className="size-3" />
+							<button type="button" aria-label="Zatvori temu" onClick={() => void act({ op: "close", threadId: t.id })} className="cursor-pointer py-1.5 pr-2 text-muted-foreground hover:text-foreground">
+								<XIcon className="size-3.5" />
 							</button>
 						</span>
 					))}
@@ -142,14 +147,11 @@ export function SidePanel({
 							setActiveId(null);
 							requestAnimationFrame(() => inputRef.current?.focus());
 						}}
-						className="shrink-0 cursor-pointer rounded-md border border-border p-1 text-muted-foreground hover:text-foreground"
+						className="shrink-0 cursor-pointer rounded-md border border-border p-2 text-muted-foreground hover:text-foreground"
 					>
-						<PlusIcon className="size-3.5" />
+						<PlusIcon className="size-4" />
 					</button>
 				</div>
-				<button type="button" aria-label="Zatvori panel" onClick={onClose} className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground">
-					<XIcon className="size-4" />
-				</button>
 			</div>
 			<p className="border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">Nastavnik ovo ne vidi · ne ulazi u kartice ni beleške dok ne sačuvaš</p>
 
@@ -182,29 +184,35 @@ export function SidePanel({
 						)}
 					</div>
 				)}
-				{active?.messages.map((m) =>
-					m.role === "user" ? (
-						<div key={m.id} className="mb-4 ml-8 rounded-lg bg-white/[0.06] px-3 py-2 text-[15px] text-foreground">
-							{m.quote && <p className="mb-1.5 border-l-2 border-green-500/60! pl-2 text-xs text-muted-foreground">„{m.quote.length > 220 ? `${m.quote.slice(0, 220)}…` : m.quote}”</p>}
-							{m.text}
-						</div>
-					) : (
-						<div key={m.id} className="mb-5">
-							{m.pending ? (
-								<p className="flex items-center gap-2 text-sm text-muted-foreground">
+				{active?.messages.map((m) => (
+					<div key={m.id} className="mb-5 flex min-w-0 items-start gap-3">
+						<span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border font-ui text-sm text-muted-foreground" aria-hidden>
+							{m.role === "user" ? "V" : "N"}
+						</span>
+						<div className="min-w-0 flex-1">
+							<p className="mb-1 font-ui text-xs uppercase tracking-widest text-muted-foreground">{m.role === "user" ? "Vi" : "Pomoćnik"}</p>
+							{m.role === "user" ? (
+								<div className="rounded-lg border border-border bg-white/[0.05] px-3 py-2 text-[15px] text-foreground">
+									{m.quote && <p className="mb-1.5 border-l-2 border-green-500/60! pl-2 text-xs text-muted-foreground">„{m.quote.length > 220 ? `${m.quote.slice(0, 220)}…` : m.quote}”</p>}
+									{m.text}
+								</div>
+							) : m.pending ? (
+								<p className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">
 									<BrailleSpinner label="Odgovaram" /> Odgovaram…
 								</p>
 							) : m.error ? (
-								<p className="text-sm text-red-400">Odgovor nije uspeo: {m.error}</p>
+								<p className="rounded-lg border border-red-500/40! px-3 py-2 text-sm text-red-400">Odgovor nije uspeo: {m.error}</p>
 							) : (
 								<>
-									<ToolContentResponse className="lh-prose block">{m.text}</ToolContentResponse>
+									<div className="side-answer min-w-0 rounded-lg border border-border px-3 py-2 [&_pre]:whitespace-pre-wrap! [&_pre_code]:whitespace-pre-wrap! [&_pre_code]:[overflow-wrap:anywhere]">
+										<ToolContentResponse className="lh-prose block">{m.text}</ToolContentResponse>
+									</div>
 									<div className="mt-2 flex gap-2">
 										<button
 											type="button"
 											disabled={m.savedToNotes}
 											onClick={() => void act({ op: "save-notes", threadId: active.id, messageId: m.id })}
-											className="cursor-pointer rounded-md border border-border px-2 py-1 font-ui text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:text-green-400"
+											className="cursor-pointer rounded-md border border-border px-2.5 py-1.5 font-ui text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:text-green-400"
 										>
 											{m.savedToNotes ? "Sačuvano u beleške" : "Sačuvaj u beleške"}
 										</button>
@@ -212,7 +220,7 @@ export function SidePanel({
 											type="button"
 											disabled={!!m.cardId}
 											onClick={() => void act({ op: "make-card", threadId: active.id, messageId: m.id })}
-											className="cursor-pointer rounded-md border border-border px-2 py-1 font-ui text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:text-green-400"
+											className="cursor-pointer rounded-md border border-border px-2.5 py-1.5 font-ui text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:cursor-default disabled:text-green-400"
 										>
 											{m.cardId ? "Kartica napravljena" : "Napravi karticu"}
 										</button>
@@ -220,8 +228,8 @@ export function SidePanel({
 								</>
 							)}
 						</div>
-					),
-				)}
+					</div>
+				))}
 			</div>
 
 			<div className="border-t border-border p-3">

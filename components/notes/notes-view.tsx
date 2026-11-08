@@ -72,6 +72,7 @@ export function NotesView({ chatId }: { chatId: string }) {
 	};
 
 	const written = data?.steps.filter((s) => s.status === "written").length ?? 0;
+	const firstWritten = data?.steps.find((s) => s.markdown)?.id ?? data?.steps[0]?.id ?? null;
 	const writing = new Set(data?.writing ?? []);
 	return (
 		<div className="flex h-dvh min-w-0 flex-1 flex-col">
@@ -115,15 +116,15 @@ export function NotesView({ chatId }: { chatId: string }) {
 			{data && data.steps.length === 0 && <p className="p-8 font-prose text-base text-muted-foreground">Ovaj kurs još nema plan, pa nema ni beleški.</p>}
 			{data && data.steps.length > 0 && (
 				<div className="flex min-h-0 flex-1 font-prose">
-					<nav className="w-80 shrink-0 overflow-y-auto border-r border-border px-3 py-5" data-testid="notes-steps">
+					<nav className="my-4 ml-4 w-80 shrink-0 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border bg-white/[0.02]" data-testid="notes-steps">
 						{data.steps.map((s) => (
 							<button
 								key={s.id}
 								type="button"
 								onClick={() => go(s.id)}
 								className={cn(
-									"flex w-full cursor-pointer items-start gap-2.5 rounded-md px-3 py-2 text-left text-[15px] leading-snug transition-colors hover:bg-accent",
-									active === s.id ? "bg-accent text-foreground" : s.status === "untaught" ? "text-muted-foreground/60" : "text-foreground/85",
+									"flex w-full cursor-pointer items-start gap-2.5 px-4 py-2.5 text-left text-[15px] leading-snug transition-colors hover:bg-accent",
+									(active ?? firstWritten) === s.id ? "bg-accent text-foreground" : s.status === "untaught" ? "text-muted-foreground/60" : "text-foreground/85",
 								)}
 							>
 								<span className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[s.status])} aria-hidden />
@@ -135,9 +136,9 @@ export function NotesView({ chatId }: { chatId: string }) {
 							</button>
 						))}
 					</nav>
-					<div ref={mainRef} className="min-w-0 flex-1 overflow-y-auto px-10 pt-6 pb-24" data-testid="notes-body">
+					<div ref={mainRef} className="m-4 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border px-8 pt-4 pb-24" data-testid="notes-body">
 						{data.error && <p className="mb-4 rounded-md border border-red-500/40! px-4 py-2 text-sm text-red-400">Pisanje beleški nije uspelo: {data.error}</p>}
-						<div className="mx-auto max-w-3xl">
+						<div className="w-full max-w-5xl">
 							{data.steps.map((s) => (
 								<section key={s.id} id={`step-${s.id}`} className="scroll-mt-4 border-b border-border/60 py-6 last:border-b-0">
 									<h2 className="mb-3 font-title text-3xl tracking-tight text-foreground">

@@ -100,10 +100,8 @@ export function StatsPage() {
 								<Tile label="Niz" value={`${data.streaks.current} ${daysWord(data.streaks.current)}`} accent />
 							</div>
 
-							<p className="mt-10 mb-3 font-ui text-base uppercase tracking-widest text-muted-foreground">Poslednjih 30 dana · minuta učenja</p>
 							<DailyBars days={data.last30} />
 
-							<p className="mt-10 mb-3 font-ui text-base uppercase tracking-widest text-muted-foreground">Godina</p>
 							<YearGrid cells={data.year} />
 							<p className="mt-4 text-lg text-foreground/85" data-testid="streak-summary">
 								Trenutni niz: <b className="font-semibold text-amber-400">{data.streaks.current} {daysWord(data.streaks.current)}</b> · Najduži niz: {data.streaks.longest}{" "}
@@ -118,32 +116,50 @@ export function StatsPage() {
 	);
 }
 
+function niceMax(n: number) {
+	for (const step of [20, 40, 60, 120, 180, 240, 360, 480]) if (n <= step) return step;
+	return Math.ceil(n / 120) * 120;
+}
+
 function DailyBars({ days }: { days: StatsView["last30"] }) {
 	const mins = days.map((d) => Math.round(d.stats.studySec / 60));
-	const max = Math.max(10, ...mins);
+	const max = niceMax(Math.max(20, ...mins));
+	const ticks = [max, (max * 3) / 4, max / 2, max / 4, 0].map((t) => Math.round(t));
 	return (
-		<div className="rounded-lg border border-border bg-white/[0.035] px-6 pt-6 pb-3" data-testid="daily-bars">
-			<div className="flex h-44 items-end gap-1.5 border-b border-border/70">
-				{days.map((d, i) => {
-					const s = d.stats;
-					const tip = `${d.date}: ${mins[i]} min · ${s.questions} pitanja · ${s.reviews} kartica · ${s.steps} koraka`;
-					return (
-						<div key={d.date} className="flex h-full flex-1 flex-col items-center justify-end" title={tip}>
-							{mins[i]! > 0 && <span className="mb-0.5 font-ui text-[10px] text-muted-foreground">{mins[i]}</span>}
-							<div
-								className={cn("w-full rounded-t-sm", i === days.length - 1 ? "bg-amber-500" : "bg-green-500/80", mins[i] === 0 && (s.questions || s.reviews) ? "bg-green-500/30" : "")}
-								style={{ height: `${mins[i] === 0 ? (s.questions || s.reviews ? 3 : 0) : Math.max(3, (mins[i]! / max) * 100)}%` }}
-							/>
-						</div>
-					);
-				})}
-			</div>
-			<div className="mt-2 flex gap-1.5">
-				{days.map((d, i) => (
-					<span key={d.date} className="flex-1 text-center font-ui text-xs text-muted-foreground">
-						{i % 2 === (days.length - 1) % 2 ? Number(d.date.slice(8)) : ""}
-					</span>
-				))}
+		<div className="mt-8 rounded-lg border border-white/25! bg-white/[0.035] px-6 pt-5 pb-3" data-testid="daily-bars">
+			<p className="mb-4 font-ui text-base uppercase tracking-widest text-foreground">Vreme učenja po danima · min</p>
+			<div className="flex gap-3">
+				<div className="relative h-44 w-10 shrink-0 font-ui text-xs text-muted-foreground">
+					{ticks.map((t, i) => (
+						<span key={i} className="absolute right-0 -translate-y-1/2" style={{ top: `${(i / (ticks.length - 1)) * 100}%` }}>
+							{t}
+						</span>
+					))}
+				</div>
+				<div className="relative min-w-0 flex-1">
+					{ticks.map((_, i) => (
+						<span key={i} className="pointer-events-none absolute inset-x-0 border-t border-white/15!" style={{ top: `${(i / (ticks.length - 1)) * 100}%` }} />
+					))}
+					<div className="relative flex h-44 items-end gap-1.5">
+						{days.map((d, i) => {
+							const s = d.stats;
+							const tip = `${d.date}: ${mins[i]} min · ${s.questions} pitanja · ${s.reviews} kartica · ${s.steps} koraka`;
+							const h = mins[i] === 0 ? (s.questions || s.reviews ? 2 : 0) : Math.max(2, (mins[i]! / max) * 100);
+							return (
+								<div key={d.date} className="flex h-full flex-1 flex-col items-center justify-end" title={tip}>
+									<div className={cn("w-full rounded-t-sm", i === days.length - 1 ? "bg-amber-500" : mins[i] === 0 ? "bg-green-500/30" : "bg-green-500")} style={{ height: `${h}%` }} />
+								</div>
+							);
+						})}
+					</div>
+					<div className="mt-2 flex gap-1.5">
+						{days.map((d, i) => (
+							<span key={d.date} className="flex-1 text-center font-ui text-xs text-muted-foreground">
+								{i % 2 === (days.length - 1) % 2 ? Number(d.date.slice(8)) : ""}
+							</span>
+						))}
+					</div>
+				</div>
 			</div>
 		</div>
 	);
@@ -154,7 +170,7 @@ function shade(c: StatsView["year"][number]) {
 	if (c.minutes >= 45) return "bg-green-500/80";
 	if (c.minutes >= 15) return "bg-green-600/60";
 	if (c.minutes > 0 || c.active) return "bg-green-700/45";
-	return "bg-white/[0.06]";
+	return "bg-white/15";
 }
 
 function YearGrid({ cells }: { cells: StatsView["year"] }) {
@@ -163,7 +179,8 @@ function YearGrid({ cells }: { cells: StatsView["year"] }) {
 	const today = localDate(Date.now());
 	const cols = { gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` };
 	return (
-		<div className="rounded-lg border border-border bg-white/[0.035] px-6 py-5" data-testid="year-grid">
+		<div className="mt-6 rounded-lg border border-white/25! bg-white/[0.035] px-6 py-5" data-testid="year-grid">
+			<p className="mb-4 font-ui text-base uppercase tracking-widest text-foreground">Aktivnost tokom godine</p>
 			<div className="grid gap-[3px]" style={cols}>
 				{weeks.map((w, i) => {
 					const first = w[0]!.date;
@@ -191,7 +208,7 @@ function YearGrid({ cells }: { cells: StatsView["year"] }) {
 			</div>
 			<div className="mt-3 flex items-center justify-end gap-1.5 font-ui text-xs text-muted-foreground">
 				Manje
-				{["bg-white/[0.06]", "bg-green-700/45", "bg-green-600/60", "bg-green-500/80", "bg-green-400"].map((c) => (
+				{["bg-white/15", "bg-green-700/45", "bg-green-600/60", "bg-green-500/80", "bg-green-400"].map((c) => (
 					<span key={c} className={cn("size-[11px] rounded-[2px]", c)} />
 				))}
 				Više
