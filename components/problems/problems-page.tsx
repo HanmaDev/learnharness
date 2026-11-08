@@ -159,7 +159,7 @@ function CategoryBar({ log, active, onPick, run, chats }: { log: ProblemLog; act
 	return (
 		<div>
 			<div className="flex flex-wrap items-center gap-3">
-				<div className="flex flex-wrap rounded-md border border-border p-0.5" role="tablist" aria-label="Kategorija">
+				<div className="flex min-w-0 flex-1 flex-wrap divide-x divide-border overflow-hidden rounded-md border border-border" role="tablist" aria-label="Kategorija">
 					{all.map((c) => (
 						<button
 							key={c.id || "all"}
@@ -172,7 +172,7 @@ function CategoryBar({ log, active, onPick, run, chats }: { log: ProblemLog; act
 								setMenu(false);
 							}}
 							className={cn(
-								"cursor-pointer rounded px-5 py-1.5 font-ui text-sm uppercase tracking-wider",
+								"flex-auto cursor-pointer px-5 py-2 font-ui text-sm uppercase tracking-wider",
 								active === c.id ? "bg-amber-500 font-medium text-black" : "text-muted-foreground hover:text-foreground",
 							)}
 						>

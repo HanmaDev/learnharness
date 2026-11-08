@@ -145,7 +145,7 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 				</span>
 			</div>
 			<div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-				<div className="flex max-h-[70vh] min-h-80 flex-col rounded-lg border border-border">
+				<div className="flex h-[calc(100dvh-25rem)] min-h-96 flex-col rounded-lg border border-border">
 					<p className="border-b border-border px-4 py-2 text-sm text-muted-foreground" data-testid="archive-total">
 						{data.total} {data.total === 1 ? "zadatak" : "zadataka"}
 					</p>
@@ -182,7 +182,7 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 						)}
 						{!list.length && <li className="p-4 text-muted-foreground">Nijedan zadatak ne odgovara filterima.</li>}
 					</ul>
-					<div className="flex gap-5 border-t border-border px-4 py-2 text-sm text-muted-foreground">
+					<div className="flex shrink-0 gap-5 border-t border-border px-4 py-2 text-sm text-muted-foreground">
 						{(["solved", "again", "none"] as const).map((s) => (
 							<span key={s} className="flex items-center gap-1.5">
 								<span className={cn("size-2.5 rounded-full", DOT[s])} />
@@ -225,16 +225,16 @@ function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: Probl
 		}
 	};
 	return (
-		<div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3" data-testid="archive-detail">
-			<div className="overflow-hidden rounded bg-white p-3">
+		<div className="flex h-[calc(100dvh-25rem)] min-h-96 min-w-0 flex-col gap-3 overflow-y-auto rounded-lg border border-border p-3" data-testid="archive-detail">
+			<div className={cn("flex items-start overflow-hidden rounded bg-white p-4", showSolution ? "shrink-0" : "min-h-[30vh] flex-1")}>
 				{p.imageId ? (
 					// eslint-disable-next-line @next/next/no-img-element -- a local route, no optimizer
-					<img src={`/api/tracker/image/${encodeURIComponent(p.imageId)}`} alt={p.title} className="mx-auto h-auto max-h-[45vh] w-full object-contain" data-testid="archive-image" />
+					<img src={`/api/tracker/image/${encodeURIComponent(p.imageId)}`} alt={p.title} className="h-auto max-h-[45vh] w-full object-contain object-left-top" data-testid="archive-image" />
 				) : (
-					<p className="p-6 text-center text-zinc-600">Slika zadatka nedostaje.</p>
+					<p className="w-full p-6 text-center text-zinc-600">Slika zadatka nedostaje.</p>
 				)}
 			</div>
-			<div className="grid grid-cols-2 gap-3">
+			<div className="grid shrink-0 grid-cols-2 gap-3">
 				<button
 					type="button"
 					disabled={!p.solution}
@@ -248,7 +248,7 @@ function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: Probl
 				<button
 					type="button"
 					onClick={() => onAttempt({ fixed: !!entry, source: entry?.source ?? "DMS arhiva", reference: entry?.reference ?? p.title, branch: logBranch(p.branch), trackerId: p.id, category: "takmicenja" })}
-					className={cn(BTN, "border-green-500! bg-green-500 py-2.5 text-sm font-medium text-black hover:bg-green-400")}
+					className={cn(BTN, "border-green-500! bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-500")}
 					data-testid="archive-attempt"
 				>
 					Zabeleži pokušaj
@@ -264,7 +264,7 @@ function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: Probl
 					))}
 				</div>
 			)}
-			<div className="flex flex-wrap items-center gap-3 font-ui text-xs uppercase tracking-widest text-muted-foreground">
+			<div className="flex shrink-0 flex-wrap items-center gap-3 font-ui text-xs uppercase tracking-widest text-muted-foreground">
 				<span className="min-w-0 flex-1">
 					Izvor: {(p.source || "DMS").replace(/\s*·\s*none\b/gi, "")}
 					{p.solution ? ` · rešenje str. ${p.solution.pageStart}${p.solution.pageEnd > p.solution.pageStart ? `–${p.solution.pageEnd}` : ""}` : ""}
