@@ -194,6 +194,13 @@ body {
 	line-height: var(--lh-prose-leading);
 }
 
+/* Fork (Kartice): card text at a multiple of the learner's prose size —
+   the wrapper sets --lh-card-scale (review-card.tsx Prose). */
+.lh-card-prose .lh-prose {
+	font-size: calc(var(--lh-prose-size) * var(--lh-card-scale, 1));
+	line-height: var(--lh-card-leading, var(--lh-prose-leading));
+}
+
 /* Session-name weight (owner, fix wave round 3): with the serif toggle
    OFF, --font-title resolves to the prose font — Source Sans 3 is loaded
    as a VARIABLE font, and without an explicit weight the titles render at

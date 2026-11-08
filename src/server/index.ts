@@ -48,6 +48,7 @@ export * from "./turn-runs.ts";
 export * from "./dismissal-park.ts";
 export * from "./compaction.ts";
 export * from "./cards.ts";
+export { generateCardDrafts, MAX_GENERATE } from "./card-generation.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";
 export * from "./observability.ts";
 export * from "./model-catalog.ts";

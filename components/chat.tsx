@@ -1,5 +1,6 @@
 "use client";
 
+import { CardsDueChip } from "@/components/cards/due-chip";
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
 import { visibleQueuedSteers } from "@/components/session-core";
@@ -1385,6 +1386,7 @@ export function Chat({
 						</button>
 </Hint>
 					)}
+					{kind !== "practice" && <CardsDueChip chatId={chatId} />}
 					{/* The extraction ring (owner-locked redesign, 2026-09-24): fills
 					    with uncovered vs the chunk threshold, pulses while a run is in
 					    flight, vanishes when the graph is off. Click → the exact

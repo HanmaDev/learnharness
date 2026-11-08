@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { DumbbellIcon, LayersIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -51,6 +51,7 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
+import { useCardsOverview } from "@/components/cards/use-cards";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -393,6 +394,30 @@ export function RenameRow({ chat, onCommit, onCancel }: { chat: ChatListItem; on
 export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
+/** Fork (Kartice): the sidebar door to the decks, with today's due count. */
+function CardsEntry({ active }: { active: boolean }) {
+	const { data } = useCardsOverview();
+	const due = data?.globalEnabled ? data.decks.reduce((n, d) => n + (d.enabled ? d.due + d.fresh : 0), 0) : 0;
+	return (
+		<Link
+			href="/cards"
+			data-testid="cards-entry"
+			className={cn(
+				"flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider transition-colors hover:bg-accent hover:text-foreground",
+				active ? "bg-accent text-foreground" : "text-muted-foreground",
+			)}
+		>
+			<LayersIcon className="size-3" />
+			Kartice
+			{due > 0 && (
+				<span className="ml-auto rounded-full bg-amber-500 px-1.5 py-px font-medium text-[10px] text-black tabular-nums" data-testid="cards-due">
+					{due}
+				</span>
+			)}
+		</Link>
+	);
+}
+
 function SessionsSidebar() {
 	const { open, toggle } = useSidebar();
 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
@@ -721,6 +746,7 @@ function SessionsSidebar() {
 						Practice
 						<span className="sr-only">create a new practice session</span>
 					</button>
+					<CardsEntry active={pathname?.startsWith("/cards") ?? false} />
 				</div>
 
 				<div className="mx-3 mb-2 flex items-center gap-2">

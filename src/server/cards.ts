@@ -15,29 +15,16 @@ import {
 	type CardRating,
 	type CardSettings,
 	type ChatRecord,
+	type CourseCardsView,
+	type CourseDeckSummary,
 } from "../core";
 import { readSettings } from "../store/settings.ts";
 import { stores } from "./stores.ts";
+import { draftProblem, draftsToGenerated } from "./card-generation.ts";
+import type { CardDraft } from "../core";
 
 export function cardSettings(): CardSettings {
 	return normalizeCardSettings(readSettings()?.cards);
-}
-
-export interface CourseCardsView {
-	chatId: string;
-	title: string;
-	/** The course's own switch. */
-	enabled: boolean;
-	/** The app-wide switch (Settings). */
-	globalEnabled: boolean;
-	settings: CardSettings;
-	examDate: string | null;
-	cards: Card[];
-	queue: CardQueue;
-	/** For each queued card: when each rating would bring it back (ms). */
-	previews: Record<string, Record<CardRating, number>>;
-	forecast: CardForecast;
-	now: number;
 }
 
 function courseInput(chat: ChatRecord, settings: CardSettings, now: number) {
@@ -67,20 +54,6 @@ export function courseCardsView(chat: ChatRecord, now = Date.now()): CourseCards
 		forecast: cardForecast(input),
 		now,
 	};
-}
-
-export interface CourseDeckSummary {
-	chatId: string;
-	title: string;
-	kind: string;
-	enabled: boolean;
-	total: number;
-	due: number;
-	fresh: number;
-	examDate: string | null;
-	/** Due counts for the next 14 days. */
-	days: number[];
-	untilExam: number | null;
 }
 
 /** The sidebar overview: every teaching course with cards. */
@@ -114,7 +87,8 @@ export function cardsOverview(now = Date.now()): { globalEnabled: boolean; setti
 export type CardAction =
 	| { op: "review"; cardId: string; rating: CardRating; correct?: boolean }
 	| { op: "flags"; cardId: string; suspended?: boolean; known?: boolean; deleted?: boolean }
-	| { op: "enabled"; enabled: boolean };
+	| { op: "enabled"; enabled: boolean }
+	| { op: "add"; drafts: CardDraft[] };
 
 /** Validate a POST body. */
 export function parseCardAction(body: unknown): CardAction | string {
@@ -139,7 +113,17 @@ export function parseCardAction(body: unknown): CardAction | string {
 		if (typeof b.enabled !== "boolean") return "enabled must be a boolean";
 		return { op: "enabled", enabled: b.enabled };
 	}
-	return "op must be review | flags | enabled";
+	if (b.op === "add") {
+		if (!Array.isArray(b.drafts) || b.drafts.length === 0 || b.drafts.length > 50) return "add needs { drafts: [...] } (1-50)";
+		const drafts: CardDraft[] = [];
+		for (const d of b.drafts as Array<Record<string, unknown>>) {
+			const args = d?.args as Record<string, unknown> | undefined;
+			if (!args || typeof args !== "object" || (d.tool !== "quiz" && d.tool !== "explain") || typeof d.nodeId !== "string" || args.nodeId !== d.nodeId) return "each draft needs { nodeId, tool, args }";
+			drafts.push({ nodeId: d.nodeId, tool: d.tool, args });
+		}
+		return { op: "add", drafts };
+	}
+	return "op must be review | flags | enabled | add";
 }
 
 /** Apply an action. Unknown card → false. */
@@ -148,6 +132,22 @@ export function applyCardAction(chat: ChatRecord, action: CardAction, now = Date
 		stores.chatStore.updateCards(chat.id, (c) => {
 			if (action.enabled) delete c.enabled;
 			else c.enabled = false;
+		});
+		return true;
+	}
+	if (action.op === "add") {
+		const nodeIds = new Set((chat.tree?.nodes ?? []).map((n) => n.id));
+		for (const d of action.drafts) {
+			const args = d.args;
+			const problem = draftProblem(
+				{ nodeId: d.nodeId, tool: d.tool, question: String(args.question ?? ""), options: args.options as never, correctAnswer: args.correctAnswer as never, explanation: args.explanation as never },
+				nodeIds,
+			);
+			if (problem) return false;
+		}
+		const generated = draftsToGenerated(action.drafts, now);
+		stores.chatStore.updateCards(chat.id, (c) => {
+			c.generated = [...(c.generated ?? []), ...generated];
 		});
 		return true;
 	}

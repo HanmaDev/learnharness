@@ -290,7 +290,12 @@ export interface CardQueue {
 	dueCount: number;
 	newCount: number;
 	reviewedToday: number;
+	/** When the next card outside the queue comes due (ms), if any. */
+	nextDue: number | null;
 }
+
+/** Learning cards this close to due are shown early when nothing else is left. */
+export const LEARN_AHEAD_MS = 20 * 60_000;
 
 /** Today's queue. A card is due when its time has come (learning steps are
  *  minutes) or, for review cards, any time today. */
@@ -305,7 +310,14 @@ export function cardQueue(built: readonly Card[], cards: CourseCards | undefined
 	const dueIds = due.slice(0, reviewRoom).map((c) => c.id);
 	const newRoom = Math.max(0, settings.newPerDay - introduced);
 	const fresh = built.filter((c) => c.status === "new").sort((a, b) => a.createdAt - b.createdAt).slice(0, newRoom);
-	return { ids: [...dueIds, ...fresh.map((c) => c.id)], dueCount: dueIds.length, newCount: fresh.length, reviewedToday: reviewed };
+	// Learn ahead (Anki's 20 min): with nothing else left, a learning card
+	// due soon is shown now instead of making the learner wait.
+	const ahead =
+		dueIds.length === 0 && fresh.length === 0
+			? active.filter((c) => c.status === "learning" && c.due !== null && c.due <= now + LEARN_AHEAD_MS).sort((a, b) => a.due! - b.due!).map((c) => c.id)
+			: [];
+	const nextDue = active.filter((c) => c.due !== null && c.due > now && !ahead.includes(c.id)).reduce<number | null>((m, c) => (m === null || c.due! < m ? c.due! : m), null);
+	return { ids: [...dueIds, ...ahead, ...fresh.map((c) => c.id)], dueCount: dueIds.length + ahead.length, newCount: fresh.length, reviewedToday: reviewed, nextDue };
 }
 
 /** When each rating would bring the card back (for the buttons). */
@@ -395,3 +407,44 @@ export function normalizeCardSettings(v: Partial<CardSettings> | undefined): Car
 		retention: typeof v?.retention === "number" && v.retention >= 0.7 && v.retention <= 0.97 ? v.retention : d.retention,
 	};
 }
+
+// ─── View shapes (built on the server, read by the browser) ────────────────
+
+export interface CourseCardsView {
+	chatId: string;
+	title: string;
+	/** The course's own switch. */
+	enabled: boolean;
+	/** The app-wide switch (Settings). */
+	globalEnabled: boolean;
+	settings: CardSettings;
+	examDate: string | null;
+	cards: Card[];
+	queue: CardQueue;
+	/** For each queued card: when each rating would bring it back (ms). */
+	previews: Record<string, Record<CardRating, number>>;
+	forecast: CardForecast;
+	now: number;
+}
+
+export interface CourseDeckSummary {
+	chatId: string;
+	title: string;
+	kind: string;
+	enabled: boolean;
+	total: number;
+	due: number;
+	fresh: number;
+	examDate: string | null;
+	/** Due counts for the next 14 days. */
+	days: number[];
+	untilExam: number | null;
+}
+
+/** A card the AI wrote, before the learner keeps it. */
+export interface CardDraft {
+	nodeId: string;
+	tool: "quiz" | "explain";
+	args: Record<string, unknown>;
+}
+

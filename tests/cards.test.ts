@@ -150,3 +150,47 @@ describe("helpers", () => {
 		assert.equal(typeof parseCardAction({ op: "nope" }), "string");
 	});
 });
+
+import { toSerbianLatin } from "../src/core/serbian-latin.ts";
+describe("Serbian Latin for old Cyrillic records", () => {
+	it("transliterates, keeping Latin, code and digraph case right", () => {
+		assert.equal(toSerbianLatin("Страни кључ повезивање"), "Strani ključ povezivanje");
+		assert.equal(toSerbianLatin("Љубав, ЉУБАВ, Џеп, Њива"), "Ljubav, LJUBAV, Džep, Njiva");
+		assert.equal(toSerbianLatin("SELECT * FROM t — Шта"), "SELECT * FROM t — Šta");
+		assert.equal(toSerbianLatin("already latin"), "already latin");
+	});
+});
+
+describe("learn ahead", () => {
+	it("a learning card due within 20 min is shown when nothing else is left", () => {
+		const msgs = ask("quiz", quiz("a", "L"), T0, { correct: false });
+		const built = buildCards({ messages: msgs, cards: undefined, settings, now: T0 + MIN + 30_000 });
+		assert.equal(built[0]!.status, "learning");
+		const q = cardQueue(built, undefined, settings, T0 + MIN + 30_000);
+		assert.deepEqual(q.ids, [built[0]!.id], "Ponovo → back within minutes, learned ahead");
+		assert.equal(q.nextDue, null);
+	});
+});
+
+import { draftProblem, draftsToGenerated, toDraft } from "../src/server/card-generation.ts";
+describe("AI card drafts", () => {
+	const ids = new Set(["css"]);
+	const quizDraft = { nodeId: "css", tool: "quiz" as const, question: "Q?", options: [{ label: "a", value: "a" }, { label: "b", value: "b" }, { label: "c", value: "c" }], correctAnswer: "b", explanation: "x" };
+	it("validates step, options and the correct answer", () => {
+		assert.equal(draftProblem(quizDraft, ids), null);
+		assert.match(draftProblem({ ...quizDraft, nodeId: "nope" }, ids)!, /unknown nodeId/);
+		assert.match(draftProblem({ ...quizDraft, options: quizDraft.options.slice(0, 2) }, ids)!, /3-5 options/);
+		assert.match(draftProblem({ ...quizDraft, correctAnswer: "z" }, ids)!, /does not match/);
+		assert.match(draftProblem({ nodeId: "css", tool: "explain", question: "Q", correctAnswer: " " }, ids)!, /correctAnswer/);
+	});
+	it("kept drafts become generated cards the deck can review", () => {
+		const [g] = draftsToGenerated([toDraft(quizDraft)], T0);
+		const built = buildCards({ messages: [], cards: { generated: [g!] }, settings, now: T0 + MIN });
+		assert.equal(built.length, 1);
+		assert.equal(built[0]!.tool, "quiz");
+		assert.equal(built[0]!.args.correctAnswer, "b");
+		const action = parseCardAction({ op: "add", drafts: [toDraft(quizDraft)] });
+		assert.equal(typeof action, "object");
+		assert.equal(typeof parseCardAction({ op: "add", drafts: [] }), "string");
+	});
+});
