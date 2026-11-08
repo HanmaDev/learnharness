@@ -14,6 +14,7 @@
  * (prompts/practice/10-doctrine.md).
  */
 
+import { aidTools, type AgentAids } from "./aids.ts";
 import { Type, type Static } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { resolveTargetId } from "../../core/chains.ts";
@@ -44,6 +45,8 @@ export interface PracticeToolContext {
 	 *  Each absent context (tests) = absent from the registry. */
 	graph?: GraphToolContext;
 	jobs?: JobToolContext;
+	/** Fork: Wolfram / YouTube helpers. */
+	aids?: AgentAids;
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -275,5 +278,6 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 		...(jobs?.research ? { research: jobs.research } : {}),
 		...(jobs ? { pdf: jobs.pdf! } : {}),
 		...(ctx.graph ? proberGraphTools(ctx.graph) : {}),
+		...aidTools(ctx.aids),
 	});
 }

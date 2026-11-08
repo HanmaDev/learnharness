@@ -37,6 +37,12 @@ export const AUTH_KEYS: readonly AuthKeyInfo[] = [
 		docsUrl: "https://console.deepgram.com/",
 	},
 	{
+		id: "WOLFRAM_APP_ID",
+		label: "Wolfram|Alpha",
+		description: "Math checking: the teacher verifies its calculations, and math answers the app can't judge are checked. Free App ID (2,000 calls/month) at developer.wolframalpha.com.",
+		docsUrl: "https://developer.wolframalpha.com/access",
+	},
+	{
 		id: "TAVILY_API_KEY",
 		label: "Tavily",
 		description: "Web-search engine for the researcher sub-agent (AI-native search API). Setting the key activates it — no engine toggle needed.",
@@ -203,6 +209,9 @@ export function validateKeyShape(id: string, rawValue: string): KeyShapeResult {
 		case "DEEPGRAM_API_KEY":
 			// No public format — the length floor only catches truncated pastes.
 			return nonEmpty(20);
+		case "WOLFRAM_APP_ID":
+			// App IDs look like "ABC123-DEF456GHIJ"; a floor catches truncation.
+			return nonEmpty(8);
 		default:
 			return { ok: false, error: `unknown key "${id}" (supported: ${[...AUTH_KEY_IDS].join(", ")})` };
 	}

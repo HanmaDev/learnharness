@@ -92,6 +92,35 @@ function sample(): number {
 	return (Math.random() * 5 - 2.5) || 0.37;
 }
 
+/** Fork (Wolfram): the second opinion for answers the app's own check can't
+ *  decide — asks the server (which asks Wolfram|Alpha when a key is set). */
+export async function wolframVerdict(answerLatex: string, givenLatex: string, accepted: readonly string[] = []): Promise<MathVerdict> {
+	let toAscii: (l: string) => string;
+	try {
+		({ toAscii } = await libs());
+	} catch {
+		return "undecided";
+	}
+	const given = asciiForMathjs(toAscii(givenLatex));
+	const verdicts: MathVerdict[] = [];
+	for (const target of [answerLatex, ...accepted]) {
+		try {
+			const res = await fetch("/api/wolfram/equal", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ expected: asciiForMathjs(toAscii(target)), given }),
+			});
+			const json = (await res.json()) as { verdict?: MathVerdict; available?: boolean };
+			if (json.available === false) return "undecided";
+			verdicts.push(json.verdict ?? "undecided");
+			if (json.verdict === "equal") return "equal";
+		} catch {
+			verdicts.push("undecided");
+		}
+	}
+	return verdicts.length && verdicts.every((v) => v === "different") ? "different" : "undecided";
+}
+
 export async function mathEquivalent(answerLatex: string, givenLatex: string, accepted: readonly string[] = []): Promise<MathVerdict> {
 	if (!givenLatex.trim()) return "different";
 	let toAscii: (l: string) => string;

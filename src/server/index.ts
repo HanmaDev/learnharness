@@ -51,6 +51,8 @@ export * from "./compaction.ts";
 export * from "./cards.ts";
 export { generateCardDrafts, MAX_GENERATE } from "./card-generation.ts";
 export * from "./notes.ts";
+export { wolframAvailable, wolframEqual, wolframUsage } from "./wolfram.ts";
+export { fetchTranscript, transcriptMarkdown, youtubeId } from "./youtube.ts";
 export * from "./side-chat.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";
 export * from "./observability.ts";

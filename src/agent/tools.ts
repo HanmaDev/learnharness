@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { aidTools, type AgentAids } from "./tools/aids.ts";
 import { exerciseInputObject, exerciseInputProblems } from "../core/exercise.ts";
 import { sqlExerciseProblems } from "./tools/sql-validate.ts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -280,6 +281,8 @@ export interface ProberToolContext extends ProbeDoneContext {
 	 *  master switch AND the agent.graphTools toggle (settings-resolution).
 	 *  Absent = the gate is closed, no map tools (tests drive this seam). */
 	graphStore?: GraphStore;
+	/** Fork: Wolfram / YouTube helpers (core of aids.ts). */
+	aids?: AgentAids;
 }
 
 /** The prober's tool set: probe quiz (no nodeId) + ask + the learner-fs
@@ -339,6 +342,8 @@ export function createProberTools(
 				// remains available without a search-provider key.
 				...(jobs.research ? { research: jobs.research } : {}),
 				pdf: jobs.pdf!,
+				// Fork: Wolfram / YouTube transcripts.
+				...aidTools(ctx.aids),
 				// The map reader (wave 7): present only when the settings gate
 				// opened.
 				...(ctx.graphStore
@@ -439,6 +444,8 @@ export interface TeacherToolContext extends PlanToolContext {
 	spawn: (job: JobRecord, input: ResearchInput | DemoInput | VisualInput | PdfInput) => void;
 	/** Retained search-status seam; research dispatch is available keylessly. */
 	searchAvailable?: () => boolean;
+	/** Fork: Wolfram / YouTube helpers. */
+	aids?: AgentAids;
 }
 
 /**
@@ -506,6 +513,8 @@ export function createTeacherTools(
 			show_image: createShowImageTool(ctx),
 			// Fork: the teacher renders its own HTML/CSS/JS live (always on).
 			html_preview: createHtmlPreviewTool(),
+			// Fork: Wolfram (when keyed) and YouTube transcripts.
+			...aidTools(ctx.aids),
 			...planTools(ctx),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
 		},

@@ -220,7 +220,7 @@ export type ExerciseResponse =
 	/** His markup; the teacher grades it. */
 	| { format: "html"; code: string }
 	/** His formula (LaTeX) and the app's equivalence verdict. */
-	| { format: "math"; latex: string; verdict: "equal" | "different" | "undecided" };
+	| { format: "math"; latex: string; verdict: "equal" | "different" | "undecided"; /** Fork: decided by Wolfram|Alpha. */ by?: "wolfram" };
 
 export type SqlCell = string | number | null;
 
@@ -548,6 +548,7 @@ export function exerciseResultForModel(input: ExerciseToolInput | undefined, res
 			if (response.format === "math") {
 				out.latex = response.latex;
 				out.check = response.verdict;
+				if (response.by === "wolfram") out.checkedBy = "Wolfram|Alpha";
 				if (response.verdict === "undecided") {
 					delete out.correct;
 					delete out.score;

@@ -1,4 +1,5 @@
 import type { Usage } from "@earendil-works/pi-ai";
+import { agentAids } from "./aids.ts";
 import {
 	createPracticeAgent,
 	createProberAgent,
@@ -490,6 +491,7 @@ export async function handleChatInput(
 							searchAvailable,
 						},
 						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
+						aids: agentAids(),
 					},
 					agentOpts,
 				)
@@ -505,6 +507,7 @@ export async function handleChatInput(
 						// The registry drop's signal (2026-09-20): no live engine
 						// = no research tool in the teacher's registry.
 						searchAvailable,
+						aids: agentAids(),
 					},
 					agentOpts,
 				)
@@ -523,6 +526,7 @@ export async function handleChatInput(
 						// knowledge graph through tools when the gate opens —
 						// graph master switch AND the agent.graphTools toggle.
 						...(graphToolsEnabled(effective) ? { graphStore: stores.graphStore } : {}),
+						aids: agentAids(),
 					},
 					agentOpts,
 				);

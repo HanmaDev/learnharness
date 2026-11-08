@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { CodeEditor } from "@/components/code-editor";
 import { MathField } from "@/components/math-field";
-import { mathEquivalent } from "@/components/math-check";
+import { mathEquivalent, wolframVerdict } from "@/components/math-check";
 import { describeSchema, runSql, type SqlRun } from "@/components/sql-runner";
 import { buildDemoSrcDoc, INITIAL_DEMO_BRIDGE_STATE, reduceDemoBridgeState, type DemoBridgeState } from "@/components/artifacts/demo-card";
 import { htmlPreviewDocument } from "@/components/artifacts/html-preview-card";
@@ -118,7 +118,17 @@ export function ExerciseForm({
 			let finalResponse = dontKnow ? null : response;
 			if (finalResponse?.format === "sql") finalResponse = await gradeSqlResponse(input, finalResponse.query);
 			if (finalResponse?.format === "math") {
-				finalResponse = { format: "math", latex: finalResponse.latex, verdict: await mathEquivalent(input.answerLatex ?? "", finalResponse.latex, input.acceptLatex) };
+				let verdict = await mathEquivalent(input.answerLatex ?? "", finalResponse.latex, input.acceptLatex);
+				let by: "wolfram" | undefined;
+				// Fork: the app couldn't decide — ask Wolfram (when a key is set).
+				if (verdict === "undecided" && input.answerLatex && finalResponse.latex.trim()) {
+					const w = await wolframVerdict(input.answerLatex, finalResponse.latex, input.acceptLatex);
+					if (w !== "undecided") {
+						verdict = w;
+						by = "wolfram";
+					}
+				}
+				finalResponse = { format: "math", latex: finalResponse.latex, verdict, ...(by ? { by } : {}) };
 			}
 			const answer = buildExerciseAnswer(
 				input,
