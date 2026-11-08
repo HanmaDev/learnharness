@@ -92,11 +92,12 @@ export function StatsPage() {
 					{error && !data && <p className="mt-6 text-sm text-muted-foreground">Statistika ne može da se učita ({error}).</p>}
 					{data && r && (
 						<>
-							<div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
+							<div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
 								<Tile label="Vreme učenja" value={formatDuration(r.studySec)} />
 								<Tile label="Koraci" value={String(r.steps)} sub="završeno" />
 								<Tile label="Pitanja" value={String(r.questions)} sub={r.graded ? `${pct(r.correct, r.graded)} tačno` : undefined} />
 								<Tile label="Kartice" value={String(r.reviews)} sub={r.reviews ? `${pct(r.recalled, r.reviews)} zapamćeno` : undefined} />
+								<Tile label="Zadaci" value={String(r.problems)} sub={r.problems ? `${r.problemsAlone} sam` : undefined} />
 								<Tile label="Niz" value={`${data.streaks.current} ${daysWord(data.streaks.current)}`} accent />
 							</div>
 

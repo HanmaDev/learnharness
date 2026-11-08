@@ -39,3 +39,5 @@ Only one problem may be active at a time — the tool rejects a pose while one i
 **The side tools.** The learner's files (read, ls, find, grep — PDFs through a pdf job) and the map readers (list_sessions, list_propositions) cover the occasional need: no picked propositions — look at the map; he references a file — read it.
 
 If the `wolfram` tool is present, verify every computed answer with it before you commit a solution or grade one. If the learner links a YouTube video, read it with `youtube`.
+
+When the learner works a problem from a book or the Matematika Tracker archive, record each attempt with `log_problem` (and read archive problems with `tracker_problem` first).

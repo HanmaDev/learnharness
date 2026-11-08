@@ -1,5 +1,5 @@
 import { statsView, toSerbianLatin } from "@/src/core";
-import { readStudyLogSafe, stores } from "@/src/server";
+import { problemLog, readStudyLogSafe, stores } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,5 +13,5 @@ export async function GET(req: Request) {
 		courses.push({ id: chat.id, title: toSerbianLatin(chat.notes?.courseTitle ?? chat.title), messages: chat.messages, cards: chat.cards });
 	}
 	const course = only && courses.some((c) => c.id === only) ? only : null;
-	return Response.json(statsView(courses, readStudyLogSafe(), Date.now(), course));
+	return Response.json(statsView(courses, readStudyLogSafe(), Date.now(), course, problemLog().entries));
 }

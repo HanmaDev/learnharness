@@ -6,6 +6,7 @@
  */
 import type { CourseCards } from "./cards.ts";
 import type { LhMessage } from "./native-messages.ts";
+import type { ProblemEntry } from "./problems.ts";
 import type { StudyTimeLog } from "./study-time.ts";
 import { localDate } from "./plan-progress.ts";
 
@@ -22,9 +23,12 @@ export interface DayStats {
 	/** Card reviews, and the ones recalled (rated above Ponovo). */
 	reviews: number;
 	recalled: number;
+	/** Fork (problem log): problem attempts, and the ones solved alone. */
+	problems: number;
+	problemsAlone: number;
 }
 
-export const emptyDay = (): DayStats => ({ studySec: 0, steps: 0, questions: 0, graded: 0, correct: 0, reviews: 0, recalled: 0 });
+export const emptyDay = (): DayStats => ({ studySec: 0, steps: 0, questions: 0, graded: 0, correct: 0, reviews: 0, recalled: 0, problems: 0, problemsAlone: 0 });
 
 export interface StatsCourseInput {
 	id: string;
@@ -120,7 +124,7 @@ export function sumDays(days: Map<string, DayStats>, dates: Iterable<string>): D
 }
 
 /** A day counts toward the streak with any real activity. */
-export const activeDay = (d: DayStats | undefined) => !!d && (d.studySec >= 60 || d.questions > 0 || d.reviews > 0 || d.steps > 0);
+export const activeDay = (d: DayStats | undefined) => !!d && (d.studySec >= 60 || d.questions > 0 || d.reviews > 0 || d.steps > 0 || d.problems > 0);
 
 const addDays = (date: string, n: number) => {
 	const [y, m, d] = date.split("-").map(Number) as [number, number, number];
@@ -189,8 +193,26 @@ export interface StatsView {
 	streaks: Streaks;
 }
 
-export function statsView(courses: ReadonlyArray<StatsCourseInput & { title: string }>, study: StudyTimeLog, now: number, only: string | null): StatsView {
+export function statsView(
+	courses: ReadonlyArray<StatsCourseInput & { title: string }>,
+	study: StudyTimeLog,
+	now: number,
+	only: string | null,
+	problems: readonly ProblemEntry[] = [],
+): StatsView {
 	const days = dailyStats(courses, study, only);
+	// Problem attempts (a course filter keeps the ones worked in that course).
+	for (const e of problems) {
+		for (const a of e.attempts) {
+			if (only && (a.chatId ?? e.chatId) !== only) continue;
+			const at = Date.parse(a.at);
+			if (!Number.isFinite(at)) continue;
+			bump(days, localDate(at), (s) => {
+				s.problems++;
+				if (a.outcome === "clean" || a.outcome === "slow") s.problemsAlone++;
+			});
+		}
+	}
 	const ranges = {
 		today: sumDays(days, rangeDates("today", now, days)),
 		week: sumDays(days, rangeDates("week", now, days)),

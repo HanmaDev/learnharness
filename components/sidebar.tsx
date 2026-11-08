@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { BarChart3Icon, DumbbellIcon, LayersIcon, NotebookTextIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { BarChart3Icon, ClipboardListIcon, DumbbellIcon, LayersIcon, NotebookTextIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -52,6 +52,8 @@ import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/sr
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
 import { useCardsOverview } from "@/components/cards/use-cards";
+import { useLiveJson } from "@/components/live-json";
+import { problemCounts, type ProblemLog } from "@/src/core";
 import { StudyTracker } from "@/components/study-tracker";
 const SIDEBAR_AUTOCLOSE = 928;
 
@@ -436,6 +438,30 @@ function CardsEntry({ active }: { active: boolean }) {
 	);
 }
 
+/** Fork (problem log): the sidebar door to Zadaci, with the count due for re-solving. */
+function ProblemsEntry({ active }: { active: boolean }) {
+	const { data } = useLiveJson<ProblemLog>("/api/problems", { chatId: "problems", debounceMs: 1_000 });
+	const due = data ? problemCounts(data.entries, Date.now()).due : 0;
+	return (
+		<Link
+			href="/problems"
+			data-testid="problems-entry"
+			className={cn(
+				"flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider transition-colors hover:bg-accent hover:text-foreground",
+				active ? "bg-accent text-foreground" : "text-muted-foreground",
+			)}
+		>
+			<ClipboardListIcon className="size-3" />
+			Zadaci
+			{due > 0 && (
+				<span className="ml-auto rounded-full bg-amber-500 px-1.5 py-px font-medium text-[10px] text-black tabular-nums" data-testid="problems-due">
+					{due}
+				</span>
+			)}
+		</Link>
+	);
+}
+
 function SessionsSidebar() {
 	const { open, toggle } = useSidebar();
 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
@@ -767,6 +793,7 @@ function SessionsSidebar() {
 					<CardsEntry active={pathname?.startsWith("/cards") ?? false} />
 					<NavEntry href="/notes" label="Beleške" icon={<NotebookTextIcon className="size-3" />} active={pathname?.startsWith("/notes") ?? false} testid="notes-entry" />
 					<NavEntry href="/stats" label="Statistika" icon={<BarChart3Icon className="size-3" />} active={pathname?.startsWith("/stats") ?? false} testid="stats-entry" />
+					<ProblemsEntry active={pathname?.startsWith("/problems") ?? false} />
 				</div>
 
 				<div className="mx-3 mb-2 flex items-center gap-2">

@@ -492,7 +492,7 @@ export async function handleChatInput(
 							searchAvailable,
 						},
 						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
-						aids: agentAids(),
+						aids: agentAids(chatId),
 					},
 					agentOpts,
 				)
