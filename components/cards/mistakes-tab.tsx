@@ -22,12 +22,14 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 	const { data, setData } = useLiveJson<MistakesData>(`/api/chats/${encodeURIComponent(chatId)}/mistakes`, { chatId, debounceMs: 800 });
 	const [show, setShow] = useState<"open" | "all">("open");
 	const [busy, setBusy] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
 	const act = async (body: object, key: string) => {
 		if (busy) return;
 		setBusy(key);
 		const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}/mistakes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
-		const json = (await res?.json().catch(() => null)) as MistakesData | null;
+		const json = (await res?.json().catch(() => null)) as (MistakesData & { error?: string }) | null;
 		if (json?.mistakes) setData(json);
+		setError(res?.ok ? null : (json?.error ?? "Nije uspelo."));
 		setBusy(null);
 	};
 	if (!data) return null;
@@ -62,6 +64,7 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 				)}
 			</div>
 
+			{error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 			{rows.length === 0 && (
 				<p className="mt-8 text-base text-muted-foreground">{show === "open" ? "Nema otvorenih grešaka." : "Još nema grešaka u ovom kursu."}</p>
 			)}

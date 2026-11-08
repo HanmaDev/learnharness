@@ -81,7 +81,19 @@ export async function analyseMistakes(chatId: string): Promise<void> {
 	if (running.has(chatId)) return;
 	running.add(chatId);
 	try {
-		for (let round = 0; round < 10; round++) {
+		await analyseRounds(chatId);
+	} catch (e) {
+		// e.g. the course was deleted mid-run: never an unhandled rejection.
+		console.warn(`[mistakes] ${chatId}: ${e instanceof Error ? e.message : e}`);
+	} finally {
+		running.delete(chatId);
+	}
+}
+
+/** Up to 3 batches (24 mistakes) per run; a long history fills in over turns. */
+async function analyseRounds(chatId: string): Promise<void> {
+	{
+		for (let round = 0; round < 3; round++) {
 			const chat = stores.chatStore.getChat(chatId);
 			if (!chat || chat.kind === "practice") return;
 			const todo = unanalysed(chat.messages, chat.mistakes).slice(0, BATCH);
@@ -117,7 +129,9 @@ export async function analyseMistakes(chatId: string): Promise<void> {
 					}
 				});
 				emit("record-changed", { chatId });
-				continue;
+				// A transient failure (rate limit, network): stop this run; the
+				// next turn retries — never burn all retries in one go.
+				return;
 			}
 			const now = new Date().toISOString();
 			stores.chatStore.updateMistakes(chatId, (ms) => {
@@ -137,8 +151,6 @@ export async function analyseMistakes(chatId: string): Promise<void> {
 			});
 			emit("record-changed", { chatId });
 		}
-	} finally {
-		running.delete(chatId);
 	}
 }
 

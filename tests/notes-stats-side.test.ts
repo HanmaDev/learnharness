@@ -239,3 +239,17 @@ describe("placement", () => {
 		assert.match(startModeText("nula"), /probe_done immediately/);
 	});
 });
+
+import { balanced, wolframEqual } from "../src/server/wolfram.ts";
+describe("review fixes (wolfram / mistakes)", () => {
+	it("math sent to Wolfram must be balanced and relation-free", async () => {
+		assert.equal(balanced("(a+(b))"), true);
+		assert.equal(balanced("0)) * 0 + ((0"), false);
+		assert.equal(await wolframEqual("2x", "0)) * 0 + ((0"), "undecided", "unbalanced answer never reaches Wolfram");
+		assert.equal(await wolframEqual("x", "x = 2"), "undecided", "relations are not compared");
+	});
+	it("probe-phase misses (no step) never enter the mistake log", () => {
+		const msgs = call("probe", { question: "P?", correctAnswer: "a" }, T0, { correct: false });
+		assert.equal(wrongAnswers(msgs).length, 0);
+	});
+});

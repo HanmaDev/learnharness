@@ -47,7 +47,9 @@ export interface MistakeState {
 /** ChatRecord.mistakes — keyed by the question's tool call id. */
 export type CourseMistakes = Record<string, MistakeState>;
 
-const QUESTION_TOOLS = new Set(["quiz", "explain", "exercise", "probe", "recall"]);
+/** Teaching questions only: probe-phase questions carry no step, so they
+ *  could never resolve and would clutter the log forever. */
+const QUESTION_TOOLS = new Set(["quiz", "explain", "exercise"]);
 
 export interface WrongAnswer {
 	callId: string;
@@ -98,7 +100,7 @@ export function wrongAnswers(messages: readonly LhMessage[]): WrongAnswer[] {
 		if (d.dismissed === true || d.setAside === true) return;
 		const ex = d.exercise?.result;
 		const wrong = d.correct === false || d.dontKnow === true || (ex && ex.graded !== false && ex.correct === false);
-		if (!wrong) return;
+		if (!wrong || typeof call.args.nodeId !== "string") return;
 		let feedback = "";
 		for (let j = i + 1; j < messages.length && j < i + 4; j++) {
 			if ((messages[j] as { role?: string }).role === "assistant") {

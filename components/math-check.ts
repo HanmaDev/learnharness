@@ -101,14 +101,16 @@ export async function wolframVerdict(answerLatex: string, givenLatex: string, ac
 	} catch {
 		return "undecided";
 	}
-	const given = asciiForMathjs(toAscii(givenLatex));
+	// Plain AsciiMath (Wolfram reads it), NOT the mathjs rewrite — that one
+	// puts log's base second, which Wolfram reads the other way round.
+	const given = toAscii(givenLatex);
 	const verdicts: MathVerdict[] = [];
 	for (const target of [answerLatex, ...accepted]) {
 		try {
 			const res = await fetch("/api/wolfram/equal", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ expected: asciiForMathjs(toAscii(target)), given }),
+				body: JSON.stringify({ expected: toAscii(target), given }),
 			});
 			const json = (await res.json()) as { verdict?: MathVerdict; available?: boolean };
 			if (json.available === false) return "undecided";

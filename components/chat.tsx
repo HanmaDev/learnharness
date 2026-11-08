@@ -1640,10 +1640,20 @@ export function Chat({
 														return null;
 													}
 													case "tool-placement_test":
-													case "tool-placement_result":
+													case "tool-placement_result": {
 														// Fork (placement): never a live card (the test input holds the
-														// answer key); once answered, one quiet summary line.
+														// answer key); a malformed call (e.g. cut off by the output
+														// limit) gets the same retry as other questions; once answered,
+														// one quiet summary line.
+														const malformedPlacement = !busy && malformedQuestions.find(call => call.messageId === part.sourceMessageId && call.contentIndex === part.sourceContentIndex && call.toolCallId === part.toolCallId);
+														if (malformedPlacement) return <MalformedQuestion key={pi} disabled={!!pending || compacting}
+															reason={pending ? "Answer or discard the remaining question first." : undefined}
+															onRetry={() => {
+																draftRef.current = null;
+																void send({ type: "retry-question", messageId: malformedPlacement.messageId, contentIndex: malformedPlacement.contentIndex, toolCallId: malformedPlacement.toolCallId });
+															}} />;
 														return part.state === "output-available" ? <PlacementSummary key={pi} tool={part.type.slice(5)} output={part.output} /> : null;
+													}
 													default: {
 														// A tool call being WRITTEN (owner, streaming round 2026-10-01):
 														// input-streaming spans the whole execution, and the live card —
@@ -2522,6 +2532,7 @@ function DockOverlay({
 									toolCallId={pending.toolCallId}
 									input={pending.input as never}
 									onSubmit={onSubmitAnswer}
+									onTalk={onTalk}
 								/>
 							) : pending ? (
 								<QuestionDock

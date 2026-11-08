@@ -86,14 +86,28 @@ export async function wolframShortAnswer(input: string, signal?: AbortSignal): P
 	return status === 200 ? text.trim() : null;
 }
 
-/** Plain-math sanity for expressions sent from the learner's math field. */
-const SAFE_EXPR = /^[\w\s+\-*/^().,=<>!|[\]{}'πθ√∞°·]+$/u;
+/** Plain-math sanity for expressions sent from the learner's math field:
+ *  no relations (A−B of two equations is meaningless), balanced brackets
+ *  (so an answer can't close the simplify(...) wrapper and game the check). */
+const SAFE_EXPR = /^[\w\s+\-*/^().,|[\]{}'πθ√∞°·]+$/u;
+
+export function balanced(s: string): boolean {
+	const pairs: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+	const stack: string[] = [];
+	for (const ch of s) {
+		if (ch === "(" || ch === "[" || ch === "{") stack.push(ch);
+		else if (ch in pairs) {
+			if (stack.pop() !== pairs[ch]) return false;
+		}
+	}
+	return stack.length === 0;
+}
 
 /** Is `given` equal to `expected`? Asks Wolfram to simplify their difference. */
 export async function wolframEqual(expected: string, given: string, signal?: AbortSignal): Promise<"equal" | "different" | "undecided"> {
 	const a = expected.trim();
 	const b = given.trim();
-	if (!a || !b || a.length > 400 || b.length > 400 || !SAFE_EXPR.test(a) || !SAFE_EXPR.test(b)) return "undecided";
+	if (!a || !b || a.length > 400 || b.length > 400 || !SAFE_EXPR.test(a) || !SAFE_EXPR.test(b) || !balanced(a) || !balanced(b)) return "undecided";
 	const answer = await wolframShortAnswer(`simplify ((${a}) - (${b}))`, signal).catch(() => null);
 	if (answer === null) return "undecided";
 	const t = answer.replace(/\s+/g, " ").trim();

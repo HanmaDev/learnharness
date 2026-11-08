@@ -100,7 +100,7 @@ async function playerResponse(videoId: string, signal?: AbortSignal): Promise<Re
 			);
 			const pr = JSON.parse(body) as Record<string, unknown>;
 			const tracks = (pr.captions as { playerCaptionsTracklistRenderer?: { captionTracks?: unknown[] } } | undefined)?.playerCaptionsTracklistRenderer?.captionTracks;
-			if ((pr.playabilityStatus as { status?: string } | undefined)?.status === "OK" || tracks?.length) return pr;
+			if (tracks?.length) return pr;
 		} catch (e) {
 			if (signal?.aborted) throw e;
 		}

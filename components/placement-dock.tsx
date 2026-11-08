@@ -32,6 +32,21 @@ import {
 
 const draftKey = (id: string) => `lh:placement:${id}`;
 
+/** Esc closes the page — claimed here, so it never reaches the chat's
+ *  abort chain (which would offer to discard the whole test). */
+function useEscapeClose(onClose: () => void) {
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			e.preventDefault();
+			e.stopPropagation();
+			onClose();
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [onClose]);
+}
+
 /** "iz 2 teme", "iz 5 tema" — Serbian count agreement after "iz". */
 export const temaForm = (n: number) => (n % 100 >= 11 && n % 100 <= 14 ? "tema" : n % 10 >= 1 && n % 10 <= 4 ? "teme" : "tema");
 
@@ -48,13 +63,17 @@ export function PlacementDock({
 	toolCallId,
 	input,
 	onSubmit,
+	onTalk,
 }: {
 	tool: "placement_test" | "placement_result";
 	toolCallId: string;
 	input: PlacementTestInput | PlacementResultInput;
 	onSubmit: (answer: QuestionAnswerData) => void;
+	/** Say something to the teacher instead ("this test is wrong", "skip it"). */
+	onTalk?: (text: string) => Promise<boolean> | boolean | void;
 }) {
 	const [open, setOpen] = useState(false);
+	const [talk, setTalk] = useState<string | null>(null);
 	const isTest = tool === "placement_test";
 	const test = input as PlacementTestInput;
 	const total = isTest ? test.topics.reduce((n, t) => n + t.questions.length, 0) : 0;
@@ -67,6 +86,32 @@ export function PlacementDock({
 					{isTest ? `${test.title} · ${total} pitanja iz ${test.topics.length} ${temaForm(test.topics.length)}` : "Pogledaj rezultat po temama i potvrdi šta učimo."}
 				</p>
 			</div>
+			{onTalk && talk === null && (
+				<button type="button" onClick={() => setTalk("")} className="shrink-0 cursor-pointer font-ui text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground">
+					Napiši nastavniku
+				</button>
+			)}
+			{onTalk && talk !== null && (
+				<span className="flex min-w-0 flex-1 items-center gap-2">
+					<input
+						autoFocus
+						value={talk}
+						onChange={(e) => setTalk(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" && talk.trim()) {
+								void onTalk(talk.trim());
+								setTalk(null);
+							}
+							if (e.key === "Escape") {
+								e.stopPropagation();
+								setTalk(null);
+							}
+						}}
+						placeholder="npr. „preskoči test” ili „ova pitanja nisu iz mog gradiva”"
+						className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm outline-none"
+					/>
+				</span>
+			)}
 			<button
 				type="button"
 				data-testid="placement-open"
@@ -104,11 +149,7 @@ function PlacementTestPage({ test, toolCallId, onClose, onSubmit }: { test: Plac
 			/* storage blocked: the test still works */
 		}
 	}, [draft, toolCallId]);
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
-	}, [onClose]);
+	useEscapeClose(onClose);
 
 	const all = useMemo(() => test.topics.flatMap((t) => t.questions), [test]);
 	const answered = all.filter((q) => {
@@ -147,12 +188,10 @@ function PlacementTestPage({ test, toolCallId, onClose, onSubmit }: { test: Plac
 				answers.push({ qid: q.id, value: given, ...(verdict !== "undecided" ? { correct: verdict === "equal" } : {}), ...(by ? { checkedBy: by } : {}) });
 			} else answers.push({ qid: q.id, value: String(d.value) });
 		}
-		try {
-			window.localStorage.removeItem(draftKey(toolCallId));
-		} catch {
-			/* fine */
-		}
+		// The draft stays until the question actually leaves (the dock unmounts
+		// then); a refused/offline send keeps every answer and re-enables the button.
 		onSubmit(askAnswer(test.title, placementAnswerText(test, answers)));
+		setTimeout(() => setGrading(false), 2_000);
 	};
 
 	let n = 0;
@@ -255,11 +294,7 @@ function PlacementTestPage({ test, toolCallId, onClose, onSubmit }: { test: Plac
 
 function PlacementResultPage({ result, onClose, onSubmit }: { result: PlacementResultInput; onClose: () => void; onSubmit: (a: QuestionAnswerData) => void }) {
 	const [decisions, setDecisions] = useState<Record<string, PlacementDecision>>(() => Object.fromEntries(result.topics.map((t) => [t.id, t.proposal])));
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
-	}, [onClose]);
+	useEscapeClose(onClose);
 	const counts = PLACEMENT_DECISIONS.map((d) => [d, result.topics.filter((t) => decisions[t.id] === d).length] as const);
 	return (
 		<div className="fixed inset-0 z-50 flex flex-col bg-background font-prose" role="dialog" aria-label="Rezultat testa" data-testid="placement-result">
@@ -327,8 +362,9 @@ function PlacementResultPage({ result, onClose, onSubmit }: { result: PlacementR
 
 /** The transcript's record of an answered placement step (no answer keys). */
 export function PlacementSummary({ tool, output }: { tool: string; output: unknown }) {
-	const text = (output as { text?: unknown } | null)?.text;
-	let line = tool === "placement_test" ? "Test znanja predat." : "Plan potvrđen.";
+	const out = (output ?? {}) as { text?: unknown; dismissed?: unknown; setAside?: unknown };
+	const text = out.text;
+	let line = out.dismissed || out.setAside ? (tool === "placement_test" ? "Test znanja odbačen." : "Rezultat testa odbačen.") : tool === "placement_test" ? "Test znanja predat." : "Plan potvrđen.";
 	try {
 		const j = JSON.parse(typeof text === "string" ? text : "{}") as { topics?: Array<{ autoGraded?: string }>; placementDecisions?: Array<{ decision: string }> };
 		if (j.topics) {

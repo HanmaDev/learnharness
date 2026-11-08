@@ -13,8 +13,19 @@ function youtubeFolder(): string {
 	return fs.existsSync(ucenje) ? path.join(ucenje, "Kursevi", "YouTube") : path.join(docs, "LearnHarness-youtube");
 }
 
-const safeName = (s: string) =>
-	s.replace(/[<>:"/\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/, "").slice(0, 90) || "video";
+/** A video title as a plain file name: no path separators (/ and \), no "..",
+ *  no Windows device characters — a title can never leave the folder. */
+function safeName(title: string): string {
+	const cleaned = Array.from(title, (ch) => (/[<>:"/|?*]/.test(ch) || ch === "\\" || ch.charCodeAt(0) < 32 ? " " : ch)).join("");
+	return (
+		cleaned
+			.replace(/\.{2,}/g, ".")
+			.replace(/\s+/g, " ")
+			.trim()
+			.replace(/^[. ]+|[. ]+$/g, "")
+			.slice(0, 90) || "video"
+	);
+}
 
 /**
  * Fork (YouTube as a course source): POST { url } → the transcript saved as
@@ -27,10 +38,11 @@ export async function POST(req: Request) {
 	try {
 		const tr = await fetchTranscript(body.url, req.signal);
 		const markdown = transcriptMarkdown(tr);
-		const dir = youtubeFolder();
+		const dir = path.resolve(youtubeFolder());
 		fs.mkdirSync(dir, { recursive: true });
 		const fileName = `${safeName(tr.title)} [${tr.videoId}].md`;
-		const file = path.join(dir, fileName);
+		const file = path.resolve(dir, fileName);
+		if (path.dirname(file) !== dir) return Response.json({ error: "Neispravan naziv fajla." }, { status: 400 });
 		fs.writeFileSync(file, markdown, "utf-8");
 		return Response.json({ fileName, path: file, markdown, title: tr.title });
 	} catch (e) {
