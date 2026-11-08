@@ -19,7 +19,7 @@ interface Db {
 	get(sql: string, ...params: unknown[]): Row | undefined;
 }
 
-let cached: { db: Db; mtime: number } | null = null;
+let cached: { db: Db; mtime: number; close: () => void } | null = null;
 
 /** node:sqlite, read-only (sees the WAL too). Reopened when the file changes. */
 function open(): Db | null {
@@ -36,10 +36,16 @@ function open(): Db | null {
 	try {
 		// getBuiltinModule: the bundler leaves it alone (a require/import of
 		// node:sqlite gets rewritten by Turbopack and fails at runtime).
-		const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as unknown as { DatabaseSync: new (p: string, o: { readOnly: boolean }) => { prepare(sql: string): { all(...p: unknown[]): Row[]; get(...p: unknown[]): Row | undefined } } };
+		const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as unknown as { DatabaseSync: new (p: string, o: { readOnly: boolean }) => { prepare(sql: string): { all(...p: unknown[]): Row[]; get(...p: unknown[]): Row | undefined }; close(): void } };
 		const raw = new DatabaseSync(file, { readOnly: true });
 		const db: Db = { all: (sql, ...p) => raw.prepare(sql).all(...p), get: (sql, ...p) => raw.prepare(sql).get(...p) };
-		cached = { db, mtime };
+		// The previous connection (an older file state) is closed, not leaked.
+		try {
+			cached?.close();
+		} catch {
+			/* already closed */
+		}
+		cached = { db, mtime, close: () => raw.close() };
 		return db;
 	} catch (e) {
 		console.warn(`[tracker] cannot open the archive: ${e instanceof Error ? e.message : e}`);

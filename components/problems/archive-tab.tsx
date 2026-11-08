@@ -5,7 +5,7 @@
  * official solution pages from the DMS PDF, and "Zabeleži pokušaj" into the
  * LearnHarness log. Status dots come from the learner's own log only.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRANCHES, resolveDate, type ProblemEntry, type ProblemLog } from "@/src/core";
@@ -75,6 +75,7 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 		const t = setTimeout(() => setF((x) => (x.q === q ? x : { ...x, q })), 300);
 		return () => clearTimeout(t);
 	}, [q]);
+	const queryRef = useRef("");
 	const query = useMemo(() => {
 		const u = new URLSearchParams();
 		for (const [k, v] of Object.entries(f)) if (v) u.set(k, v);
@@ -83,6 +84,7 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 	useEffect(() => {
 		let live = true;
 		setMore([]);
+		queryRef.current = query;
 		try {
 			window.localStorage.setItem(FILTER_KEY, JSON.stringify(f));
 		} catch {
@@ -101,12 +103,23 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 			live = false;
 		};
 	}, [query, f]);
+	// One "Učitaj još" at a time, and only for the filters it was asked under.
+	const loading = useRef<string | null>(null);
 	const loadMore = async () => {
-		if (!data) return;
-		const res = await fetch(`/api/tracker/problems?${query}${query ? "&" : ""}offset=${data.problems.length + more.length}`, { cache: "no-store" });
-		if (res.ok) {
-			const d = (await res.json()) as ListResponse;
-			setMore((m) => [...m, ...d.problems]);
+		if (!data || loading.current !== null) return;
+		const asked = query;
+		loading.current = asked;
+		try {
+			const res = await fetch(`/api/tracker/problems?${asked}${asked ? "&" : ""}offset=${data.problems.length + more.length}`, { cache: "no-store" });
+			if (res.ok && queryRef.current === asked) {
+				const d = (await res.json()) as ListResponse;
+				setMore((m) => {
+					const seen = new Set([...data.problems, ...m].map((p) => p.id));
+					return [...m, ...d.problems.filter((p) => !seen.has(p.id))];
+				});
+			}
+		} finally {
+			loading.current = null;
 		}
 	};
 	const byTracker = useMemo(() => new Map(log.entries.filter((e) => e.trackerId).map((e) => [e.trackerId!, e])), [log]);

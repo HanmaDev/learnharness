@@ -43,9 +43,14 @@ export interface AttemptInput {
 /** Add an attempt — to the existing entry for the same source+reference, or a new one. */
 export function logAttempt(input: AttemptInput): { entry: ProblemEntry; created: boolean } {
 	const result = updateProblemLog((log) => {
+		// The same problem: an exact archive id first; else the same
+		// source+reference — never one that is a DIFFERENT archive problem.
 		const key = problemKey(input.source, input.reference);
-		let entry = log.entries.find((e) => (input.trackerId && e.trackerId === input.trackerId) || problemKey(e.source, e.reference) === key);
+		let entry =
+			(input.trackerId ? log.entries.find((e) => e.trackerId === input.trackerId) : undefined) ??
+			log.entries.find((e) => problemKey(e.source, e.reference) === key && !(input.trackerId && e.trackerId && e.trackerId !== input.trackerId));
 		const created = !entry;
+		if (entry && input.trackerId && !entry.trackerId) entry.trackerId = input.trackerId;
 		if (!entry) {
 			const category = input.category && log.categories.some((c) => c.id === input.category) ? input.category : defaultCategory(log, input.source, input.chatId);
 			entry = {

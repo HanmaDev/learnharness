@@ -419,7 +419,12 @@ function EntryEditor({ entry, log, run, onClose }: { entry: ProblemEntry; log: P
 	const [category, setCategory] = useState(entry.category);
 	const [branch, setBranch] = useState(entry.branch ?? "");
 	const [note, setNote] = useState(entry.note ?? "");
-	const [date, setDate] = useState(resolveDate(entry) ?? "");
+	const scheduled = resolveDate(entry) ?? "";
+	const [date, setDate] = useState(scheduled);
+	// The field follows the schedule when it changes underneath (a new
+	// attempt, "Automatski"); a pick the learner hasn't applied yet is replaced.
+	useEffect(() => setDate(scheduled), [scheduled]);
+	const orphan = !log.categories.some((c) => c.id === entry.category);
 	const dirty = reference !== entry.reference || source !== entry.source || category !== entry.category || branch !== (entry.branch ?? "") || note !== (entry.note ?? "");
 	const save = () =>
 		void run({
@@ -447,6 +452,7 @@ function EntryEditor({ entry, log, run, onClose }: { entry: ProblemEntry; log: P
 					<label className="flex flex-col gap-1 text-sm text-muted-foreground">
 						Kategorija
 						<select value={category} onChange={(e) => setCategory(e.target.value)} className={INPUT}>
+							{orphan && <option value={entry.category}>(obrisana kategorija)</option>}
 							{log.categories.map((c) => (
 								<option key={c.id} value={c.id}>
 									{c.label}

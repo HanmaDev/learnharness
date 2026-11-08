@@ -5,6 +5,7 @@
  * re-solve date derived from the latest outcome (overridable by hand).
  * See docs/fork-plans/problem-log-plan.md. Pure: no runtime deps.
  */
+import { toSerbianLatin } from "./serbian-latin.ts";
 
 export const OUTCOMES = ["clean", "slow", "hint", "read", "unsolved"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
@@ -72,15 +73,17 @@ export interface ProblemLog {
 
 export const emptyProblemLog = (): ProblemLog => ({ version: 1, categories: [...DEFAULT_CATEGORIES], courseCategory: {}, entries: [] });
 
-/** The key two references are "the same problem" by. */
+/** The key two references are "the same problem" by: Cyrillic read as
+ *  Latin, case and diacritics ignored, punctuation as spaces — letters of
+ *  any script are kept (review: dropping them merged different books). */
 export function problemKey(source: string, reference: string): string {
 	const norm = (s: string) =>
-		s
+		toSerbianLatin(s)
 			.toLowerCase()
 			.normalize("NFKD")
 			.replace(/[̀-ͯ]/g, "")
 			.replace(/đ/g, "dj")
-			.replace(/[^a-z0-9]+/g, " ")
+			.replace(/[^\p{L}\p{N}]+/gu, " ")
 			.trim();
 	return `${norm(source)}|${norm(reference)}`;
 }
@@ -185,6 +188,25 @@ export function attemptsByDay(entries: readonly ProblemEntry[], category?: strin
 
 export function isOutcome(v: unknown): v is Outcome {
 	return typeof v === "string" && (OUTCOMES as readonly string[]).includes(v);
+}
+
+/**
+ * Why a stored log can't be read safely (the store moves such a file aside
+ * instead of overwriting it), or null. Entries that would be dropped count:
+ * writing the parsed log back would lose them.
+ */
+export function problemLogProblem(raw: unknown): string | null {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "not an object";
+	const r = raw as Record<string, unknown>;
+	if (r.version !== 1) return `unknown version ${String(r.version)}`;
+	if (r.entries !== undefined && !Array.isArray(r.entries)) return "entries is not a list";
+	if (r.categories !== undefined && !Array.isArray(r.categories)) return "categories is not a list";
+	const kept = parseProblemLog(raw);
+	const entries = (r.entries as unknown[] | undefined) ?? [];
+	if (kept.entries.length !== entries.length) return `${entries.length - kept.entries.length} malformed entries`;
+	const attempts = (e: unknown) => (e && typeof e === "object" && Array.isArray((e as { attempts?: unknown }).attempts) ? (e as { attempts: unknown[] }).attempts.length : 0);
+	if (kept.entries.reduce((n, e) => n + e.attempts.length, 0) !== entries.reduce((n: number, e) => n + attempts(e), 0)) return "malformed attempts";
+	return null;
 }
 
 /** Read an unknown JSON value as a log, dropping what's malformed. */
