@@ -211,7 +211,16 @@ describe("session text fields keep keystrokes local", () => {
 		assert.equal(sends, 1, "empty input still allows finish-first dictation send");
 		await act(async () => { update({ busy: true, dictationActive: false, nextProblem: false }); });
 		assert.ok(host.querySelector('[aria-label="Stop"]'));
+		// Fork: a stop right as the turn starts is the sending Enter's echo — ignored.
 		await submit();
+		assert.equal(stops, 0, "no stop within the grace window");
+		const realNow = Date.now;
+		Date.now = () => realNow() + 2_000;
+		try {
+			await submit();
+		} finally {
+			Date.now = realNow;
+		}
 		assert.equal(stops, 1);
 		await typeText(editorIn(host), "steer now");
 		assert.ok(host.querySelector('[aria-label="Send"]'));
