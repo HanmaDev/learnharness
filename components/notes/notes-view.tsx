@@ -153,14 +153,14 @@ export function NotesView({ chatId }: { chatId: string }) {
 													? "Označeno kao završeno, ali lekcija za ovaj korak nije sačuvana u ovom chatu — nema iz čega da se napišu beleške."
 													: "Još nije obrađeno."
 												: s.status === "pending"
-													? "Ovaj korak je u toku — beleške se pišu kada lekcija pređe dalje (ili klikni „Ažuriraj beleške”)."
+													? "Ovaj korak je u toku — klikni „Ažuriraj beleške” da se napišu beleške."
 													: writing.has(s.id)
 														? "Pišem beleške…"
-														: "Čeka pisanje."}
+														: "Još nije napisano — klikni „Ažuriraj beleške”."}
 										</p>
 									)}
 									{s.markdown && s.status === "stale" && !writing.has(s.id) && (
-										<p className="mt-3 font-ui text-xs uppercase tracking-wider text-muted-foreground">Ima novog gradiva — biće dopunjeno.</p>
+										<p className="mt-3 font-ui text-xs uppercase tracking-wider text-muted-foreground">Ima novog gradiva — klikni „Ažuriraj beleške” da se dopuni.</p>
 									)}
 									{s.extras.map((e) => (
 										<div key={e.id} className="mt-5 rounded-md border border-border bg-white/[0.03] px-4 py-3">

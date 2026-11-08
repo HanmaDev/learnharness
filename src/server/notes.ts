@@ -2,9 +2,8 @@
  * Topic notes (fork, 2026-11-08) — the server side: the background writer,
  * the notes file in the learner's folder, and the view the notes page reads.
  *
- * The writer runs after a teaching turn (debounced) for every taught step
- * that changed and is no longer the one being taught, or on request for all
- * of them. Notes are written by the teacher-slot model, never shown to the
+ * The writer runs only when the learner clicks "Ažuriraj beleške" (owner,
+ * 2026-11-08: no automatic writing) — every taught step that is out of date. Notes are written by the teacher-slot model, never shown to the
  * teacher, and stored in ChatRecord.notes (so the data backups carry them)
  * plus the readable .md file in the notes folder.
  */
