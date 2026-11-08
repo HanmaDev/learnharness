@@ -156,7 +156,7 @@ it("graph menu clearly distinguishes extraction from lesson material, above unch
 	assert.equal(menu.querySelector("p")!.textContent, "For lessons, attach material to a session instead.");
 	assert.equal(menu.getAttribute("aria-describedby"), menu.querySelector("p")!.id);
 	assert.ok(menu.className.includes("w-52"), "compact width wraps the short hint");
-	assert.deepEqual(Array.from(menu.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent), ["Files", "Folder"]);
+	assert.deepEqual(Array.from(menu.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent), ["Files", "Folder", "YouTube video…"]);
 	assert.equal(menu.firstElementChild!.textContent, "For lessons, attach material to a session instead.");
 	const inputs = host.querySelectorAll<HTMLInputElement>('input[type="file"]');
 	let filesClicks = 0, folderClicks = 0;

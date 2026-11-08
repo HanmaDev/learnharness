@@ -77,7 +77,7 @@ export function useNotesImport(callbacks: { onStart?: () => void; onFinish?: () 
 	}, [snapshot.completion]);
 	return {
 		errors: snapshot.errors, notices: snapshot.notices, importing: snapshot.importing,
-		onImportFiles: (files: FileList | null) => {
+		onImportFiles: (files: FileList | File[] | null) => {
 			if (!files || files.length === 0) return;
 			latest.current.onStart?.();
 			pageImportQueue.append(Array.from(files));
@@ -87,10 +87,25 @@ export function useNotesImport(callbacks: { onStart?: () => void; onFinish?: () 
 
 /** PR198's shared Files / Folder native picker. Unlike the donor, it remains
  * available while work is running; later selections join the SAME queue. */
-export function NotesImportControl({ importing, onImportFiles }: { importing: boolean; onImportFiles: (files: FileList | null) => void }) {
+export function NotesImportControl({ importing, onImportFiles }: { importing: boolean; onImportFiles: (files: FileList | File[] | null) => void }) {
 	const filesRef = useRef<HTMLInputElement>(null);
 	const folderRef = useRef<HTMLInputElement>(null);
 	const [open, setOpen] = useState(false);
+	// Fork: a YouTube video as a source — its transcript is saved next to the
+	// course material and extracted like any notes file.
+	const [yt, setYt] = useState<{ url: string; busy: boolean; error: string | null; saved: string | null } | null>(null);
+	const addYoutube = async () => {
+		if (!yt?.url.trim()) return;
+		setYt({ ...yt, busy: true, error: null });
+		const res = await fetch("/api/youtube/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: yt.url.trim() }) }).catch(() => null);
+		const json = (await res?.json().catch(() => null)) as { fileName?: string; path?: string; markdown?: string; error?: string } | null;
+		if (!res?.ok || !json?.markdown || !json.fileName) {
+			setYt({ ...yt, busy: false, error: json?.error ?? "Transkript nije preuzet." });
+			return;
+		}
+		onImportFiles([new File([json.markdown], json.fileName, { type: "text/markdown" })]);
+		setYt({ url: "", busy: false, error: null, saved: json.path ?? json.fileName });
+	};
 	const hintId = useId();
 	const onChange = (event: ChangeEvent<HTMLInputElement>) => {
 		onImportFiles(event.target.files);
@@ -114,6 +129,24 @@ export function NotesImportControl({ importing, onImportFiles }: { importing: bo
 					<div role="none"><p id={hintId} className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">For lessons, attach material to a session instead.</p></div>
 					{choices.map(([label, input]) => <button key={label} type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
 						onClick={() => { setOpen(false); input.current?.click(); }}>{label}</button>)}
+					<button type="button" role="menuitem" data-testid="import-youtube" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
+						onClick={() => { setOpen(false); setYt({ url: "", busy: false, error: null, saved: null }); }}>YouTube video…</button>
+				</div>
+			)}
+			{yt && (
+				<div className="absolute right-0 top-full z-50 mt-1 w-96 rounded-lg border bg-card p-3 shadow-lg" data-testid="youtube-source">
+					<p className="mb-2 text-xs text-muted-foreground">YouTube link — transkript se čuva u Kursevi\YouTube i dodaje u graf znanja.</p>
+					<div className="flex gap-2">
+						<input autoFocus value={yt.url} onChange={(e) => setYt({ ...yt, url: e.target.value, error: null, saved: null })}
+							onKeyDown={(e) => { if (e.key === "Enter") void addYoutube(); if (e.key === "Escape") setYt(null); }}
+							placeholder="https://www.youtube.com/watch?v=…" className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs outline-none" />
+						<button type="button" disabled={yt.busy || !yt.url.trim()} onClick={() => void addYoutube()} className="h-8 cursor-pointer rounded-md bg-primary px-3 text-xs text-primary-foreground disabled:opacity-50">
+							{yt.busy ? "Preuzimam…" : "Dodaj"}
+						</button>
+					</div>
+					{yt.error && <p className="mt-2 text-xs text-red-400">{yt.error}</p>}
+					{yt.saved && <p className="mt-2 break-all text-xs text-green-400">Sačuvano: {yt.saved}</p>}
+					<button type="button" onClick={() => setYt(null)} className="mt-2 text-xs text-muted-foreground hover:text-foreground">Zatvori</button>
 				</div>
 			)}
 		</div>
