@@ -375,7 +375,7 @@ function ProblemTable({ entries, log, now, run, onAttempt }: TableProps) {
 									</td>
 									<td className="px-4 py-3">{e.source}</td>
 									<td className="px-4 py-3">{e.branch ?? <span className="text-muted-foreground">—</span>}</td>
-									<td className="px-4 py-3">{last ? <OutcomePill outcome={last.outcome} minutes={last.minutes} /> : <span className="text-muted-foreground">—</span>}</td>
+									<td className="px-4 py-3">{last ? <OutcomePill outcome={last.outcome} minutes={last.minutes} /> : <span className="text-muted-foreground">nije rađen</span>}</td>
 									<td className={cn("whitespace-nowrap px-4 py-3", next.due ? "text-amber-400" : "text-foreground/85")}>{next.text}</td>
 									<td className="px-4 py-3 tabular-nums">{e.attempts.length}</td>
 									<td className="whitespace-nowrap px-4 py-3 text-right">

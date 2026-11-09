@@ -1296,3 +1296,52 @@ for (const sharedIdentity of [false, true]) test(`two concurrent stream owners k
 	assert.equal(one.calls.length, 1);
 	assert.equal(two.calls.length, 1);
 });
+
+// Fork (2026-11-09): a turn must never run without the LearnHarness tools.
+// Claude Code lists every --mcp-config server with its status on its init line.
+function initLine(status: string | null): string {
+	return JSON.stringify({ type: "system", subtype: "init", tools: [], mcp_servers: status ? [{ name: "learnharness", status }] : [] });
+}
+
+function twoRuns(t: TestContext, first: string[], second: string[]): { runClaude: RunClaude; count: () => number } {
+	const a = createFakeRun(t, first);
+	const b = createFakeRun(t, second);
+	let n = 0;
+	return { runClaude: (args, options) => (n++ === 0 ? a.runClaude(args, options) : b.runClaude(args, options)), count: () => n };
+}
+
+function bridgeContext() {
+	return normalizeContext({ systemPrompt: "You are a tutor.", messages: [{ role: "user", content: "hi", timestamp: 0 }], tools: [READ_TOOL] });
+}
+
+test("bridgeStatusFromInit: connected, failed/pending = missing, unlisted or other lines = no verdict", async () => {
+	const { bridgeStatusFromInit } = await import("../src/agent/claude-code/stream.ts");
+	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("connected"))), "connected");
+	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("failed"))), "missing");
+	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("pending"))), "missing");
+	assert.equal(bridgeStatusFromInit(JSON.parse(initLine(null))), null);
+	assert.equal(bridgeStatusFromInit({ type: "stream_event" }), null);
+});
+
+test("a turn whose tool bridge didn't connect is started again once, and then answers normally", async (t) => {
+	const text = readFixtureLines("text.jsonl").slice(1);
+	const { runClaude, count } = twoRuns(t, [initLine("failed"), ...text], [initLine("connected"), ...text]);
+	const events = await collectEvents(createClaudeCodeStreamFunction(runClaude)(CLAUDE_CODE_MODELS[0]!, bridgeContext(), { sessionId: SESSION_ID }));
+	const done = getLastEvent(events);
+	assert.ok(done.type === "done", `ended with ${done.type}`);
+	assert.deepEqual(done.message.content, [{ type: "text", text: "hello there" }]);
+	assert.equal(count(), 2, "one retry");
+	assert.equal(events.filter((e) => e.type === "start").length, 1, "the learner sees one turn");
+});
+
+test("a turn whose bridge fails twice ends with a clear error, never a tool-less answer", async (t) => {
+	const text = readFixtureLines("text.jsonl").slice(1);
+	const { runClaude, count } = twoRuns(t, [initLine("failed"), ...text], [initLine("failed"), ...text]);
+	const { BRIDGE_MISSING_MESSAGE } = await import("../src/agent/claude-code/stream.ts");
+	const events = await collectEvents(createClaudeCodeStreamFunction(runClaude)(CLAUDE_CODE_MODELS[0]!, bridgeContext(), { sessionId: SESSION_ID }));
+	const last = getLastEvent(events);
+	assert.ok(last.type === "error", `ended with ${last.type}`);
+	assert.equal(last.error.errorMessage, BRIDGE_MISSING_MESSAGE);
+	assert.equal(count(), 2);
+	assert.ok(!events.some((e) => e.type === "text_delta"), "no answer text without tools");
+});

@@ -9,6 +9,7 @@ import { categoryHint, logAttempt } from "./problems.ts";
 import { listTrackerProblems, trackerAvailable, trackerFacets, trackerImageFile, trackerProblem, trackerReference, type TrackerProblem } from "./tracker.ts";
 import { fieldsMatch, parseArchiveQuery, titleFields } from "./tracker-match.ts";
 import { stores } from "./stores.ts";
+import { makeCardsFor, planStepsText, problemEditFor, problemListText } from "./teacher-records.ts";
 import type { AgentAids } from "../agent/tools/aids.ts";
 import { wolframAvailable, wolframLlmQuery } from "./wolfram.ts";
 import { fetchTranscript, transcriptMarkdown } from "./youtube.ts";
@@ -19,6 +20,14 @@ const MAX_TRANSCRIPT_CHARS = 80_000;
 function safeCategoryHint(): string {
 	try {
 		return categoryHint();
+	} catch {
+		return "";
+	}
+}
+
+function safePlanSteps(chatId: string): string {
+	try {
+		return planStepsText(chatId);
 	} catch {
 		return "";
 	}
@@ -41,6 +50,11 @@ export function agentAids(chatId?: string): AgentAids {
 					},
 					problemCategories: safeCategoryHint(),
 					...(trackerAvailable() ? { trackerLookup } : {}),
+					// Fork (2026-11-09): the learner's records, changed on request.
+					problemList: (f) => problemListText(chatId, f),
+					problemEdit: (input) => problemEditFor(chatId, input),
+					makeCards: (cards) => makeCardsFor(chatId, cards),
+					planSteps: safePlanSteps(chatId),
 				}
 			: {}),
 		...(wolframAvailable() ? { wolfram: (q: string, signal?: AbortSignal) => wolframLlmQuery(q, signal) } : {}),

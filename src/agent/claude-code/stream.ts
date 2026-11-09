@@ -70,6 +70,23 @@ const STOP_REASONS: Record<string, StopReason> = {
 const REFUSAL_MESSAGE = "The model refused to complete the request";
 const ABORT_MESSAGE = "Request was aborted";
 const START_FAILED_MESSAGE = "claude CLI failed to start";
+// Fork (2026-11-09): Claude Code started without the LearnHarness tool bridge
+// (MCP server not connected). The model would answer with no tools at all —
+// it once told the learner it "can't" do things it can. Retried once.
+export const BRIDGE_MISSING_MESSAGE =
+	"The teacher's tools didn't connect for this turn (Claude Code started without the LearnHarness tool bridge, twice). Send your message again.";
+
+/** Claude Code's startup line: is our bridge connected? null = not that line. */
+export function bridgeStatusFromInit(line: unknown): "connected" | "missing" | null {
+	if (!line || typeof line !== "object") return null;
+	const l = line as { type?: unknown; subtype?: unknown; mcp_servers?: unknown };
+	if (l.type !== "system" || l.subtype !== "init" || !Array.isArray(l.mcp_servers)) return null;
+	// A server passed with --mcp-config is always listed, with its status
+	// ("connected", "failed", "pending", …); not listed at all = no verdict.
+	const server = (l.mcp_servers as Array<{ name?: unknown; status?: unknown }>).find((x) => x && x.name === BRIDGE_SERVER_NAME);
+	if (!server) return null;
+	return server.status === "connected" ? "connected" : "missing";
+}
 const NO_STOP_REASON_MESSAGE = "claude CLI ended the message without a stop reason";
 const NOT_SIGNED_IN_ERROR = "authentication_failed";
 
@@ -421,6 +438,13 @@ class ClaudeProcess implements LiveProcess {
 	private pendingError: string | undefined;
 	private contextWindow: number | undefined;
 	private contextProbe: ContextWindowProbe | undefined;
+	/** Retired for a retry: closing must not fail the turn. */
+	private retired = false;
+	/** Fork: called when the bridge did not connect; true = a retry took over. */
+	onBridgeMissing: (() => boolean) | undefined;
+	/** The turn sends tools, so the bridge must be connected (a tool-less
+	 *  turn, e.g. a title, configures no MCP server at all). */
+	expectsBridge = false;
 
 	constructor(
 		private readonly child: ChildProcessWithoutNullStreams,
@@ -557,7 +581,16 @@ class ClaudeProcess implements LiveProcess {
 
 	private handleLine(line: string): void {
 		if (this.stopping || !line.trim()) return;
-		if (this.contextProbe?.handle(JSON.parse(line))) return;
+		const raw: unknown = JSON.parse(line);
+		if (this.expectsBridge && bridgeStatusFromInit(raw) === "missing") {
+			console.error(`claude CLI started without the ${BRIDGE_SERVER_NAME} tool bridge:`, JSON.stringify((raw as { mcp_servers?: unknown }).mcp_servers));
+			if (this.onBridgeMissing?.()) {
+				this.retired = true;
+				this.kill();
+			} else this.fail(BRIDGE_MISSING_MESSAGE);
+			return;
+		}
+		if (this.contextProbe?.handle(raw)) return;
 		const event = parseCliLine(line);
 		if (!event) return;
 		if (event.type === "toolResults") {
@@ -602,7 +635,7 @@ class ClaudeProcess implements LiveProcess {
 		if (this.pendingError) addLiveProcess(this);
 		this.signal?.removeEventListener("abort", this.abort);
 		if (this.stderr.trim()) console.error("claude CLI stderr:", this.stderr.trim());
-		this.turn.fail(message, "error");
+		if (!this.retired) this.turn.fail(message, "error");
 		removeTurnResources(this.bridge, this.files).catch((error: unknown) => {
 			console.error("claude CLI cleanup failed:", error);
 		});
@@ -649,6 +682,7 @@ async function startProcess(
 	owner: symbol,
 	configuration: unknown,
 	env: NodeJS.ProcessEnv,
+	attempt = 0,
 ): Promise<void> {
 	if (options?.signal?.aborted) { turn.fail(ABORT_MESSAGE, "aborted"); return; }
 	const input = toClaudeInput(context.messages);
@@ -693,6 +727,16 @@ async function startProcess(
 	}
 
 	cliProcess = new ClaudeProcess(child, bridge, files, turn, owner, options?.sessionId, configuration, structuredClone(conversationForReuse(context.messages)));
+	cliProcess.expectsBridge = input.tools.length > 0;
+	// One fresh start (new bridge, new process) when the bridge didn't connect.
+	cliProcess.onBridgeMissing = () => {
+		if (attempt >= 1 || options?.signal?.aborted) return false;
+		startProcess(runClaude, turn, model, context, options, owner, configuration, env, attempt + 1).catch((error: unknown) => {
+			console.error("claude CLI retry failed:", error);
+			turn.fail(error instanceof ClaudeLaunchError ? error.message : START_FAILED_MESSAGE, "error");
+		});
+		return true;
+	};
 	cliProcess.start(toStreamJsonLine(input.userContent), options?.signal);
 }
 

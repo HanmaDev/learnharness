@@ -242,3 +242,51 @@ export function categoryHint(): string {
 }
 
 export { BRANCHES };
+
+export interface PlanInput {
+	source: string;
+	reference: string;
+	/** YYYY-MM-DD — the day it shows up in "Za ponovno rešavanje". */
+	on: string;
+	category?: string;
+	branch?: string;
+	trackerId?: string;
+	note?: string;
+	chatId?: string;
+}
+
+/**
+ * Fork (2026-11-09): put a problem the learner has NOT attempted yet on a
+ * day — an entry with no attempts and a hand-set date. An existing entry for
+ * the same problem just gets the date. Its first attempt makes it ordinary.
+ */
+export function planProblem(input: PlanInput): { entry: ProblemEntry; created: boolean } | string {
+	if (!isDate(input.on)) return "on must be YYYY-MM-DD";
+	const result = updateProblemLog((log) => {
+		const key = problemKey(input.source, input.reference);
+		let entry =
+			(input.trackerId ? log.entries.find((e) => e.trackerId === input.trackerId) : undefined) ??
+			log.entries.find((e) => problemKey(e.source, e.reference) === key && !(input.trackerId && e.trackerId && e.trackerId !== input.trackerId));
+		const created = !entry;
+		if (!entry) {
+			const category = input.category && log.categories.some((c) => c.id === input.category) ? input.category : defaultCategory(log, input.source, input.chatId);
+			entry = {
+				id: newId("pr"),
+				category,
+				source: input.source,
+				reference: input.reference,
+				...(input.branch ? { branch: input.branch } : {}),
+				...(input.chatId ? { chatId: input.chatId } : {}),
+				...(input.trackerId ? { trackerId: input.trackerId } : {}),
+				...(input.note ? { note: input.note } : {}),
+				attempts: [],
+				createdAt: new Date().toISOString(),
+			};
+			log.entries.push(entry);
+		} else if (input.trackerId && !entry.trackerId) entry.trackerId = input.trackerId;
+		entry.resolveOn = input.on;
+		return { entry: structuredClone(entry), created };
+	});
+	changed();
+	return result;
+}
