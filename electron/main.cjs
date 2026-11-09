@@ -143,7 +143,20 @@ if (process.argv.includes("--browser-service")) {
 				win.focus();
 			}
 		});
-		main();
+		main().catch((err) => {
+			// Fork (2026-11-09): a failed start used to leave the processes running
+			// with no window — every later shortcut click then hit the single-
+			// instance lock and exited silently. Say so, and really quit.
+			log(`startup FAILED: ${err && err.stack ? err.stack : err}`);
+			try {
+				const why = err && err.message ? err.message : String(err);
+				dialog.showErrorBox("LearnHarness ne može da se pokrene", `Pokretanje nije uspelo: ${why}\n\nDetalji su u logs\\main.log. Pokušaj ponovo da otvoriš aplikaciju.`);
+			} catch {
+				/* no UI left */
+			}
+			killServer();
+			app.exit(1);
+		});
 	}
 }
 
@@ -644,6 +657,46 @@ function installMenu() {
 	Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+/* Fork (2026-11-09): the server takes ~10 s to come up (over a minute on a
+ * cold boot), and the real window only appears once the page has rendered —
+ * so a click on the shortcut showed nothing for that long. This window shows
+ * at once and is replaced by the real one (or closes the app if the learner
+ * closes it). */
+let startupWin = null;
+const STARTUP_HTML = `<!doctype html><meta charset="utf-8"><title>LearnHarness</title>
+<style>html,body{margin:0;height:100%;background:#141414;color:#e5e5e5;font:15px system-ui,sans-serif;-webkit-app-region:drag;user-select:none}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.d{display:flex;gap:6px}.d i{width:7px;height:7px;border-radius:50%;background:#f59e0b;animation:p 1.2s infinite ease-in-out}
+.d i:nth-child(2){animation-delay:.2s}.d i:nth-child(3){animation-delay:.4s}
+@keyframes p{0%,80%,100%{opacity:.25}40%{opacity:1}}p{margin:0;opacity:.8}</style>
+<div class="d"><i></i><i></i><i></i></div><p>LearnHarness se pokreće…</p>`;
+
+function showStartupWindow() {
+	startupWin = new BrowserWindow({
+		width: 1440,
+		height: 900,
+		title: PRODUCT_NAME,
+		backgroundColor: "#141414",
+		...(process.platform === "darwin"
+			? { titleBarStyle: "hiddenInset" }
+			: { titleBarStyle: "hidden", titleBarOverlay: { color: "#141414", symbolColor: "#e5e5e5" }, autoHideMenuBar: true }),
+		minWidth: 640,
+		minHeight: 600,
+		webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+	});
+	startupWin.once("closed", () => {
+		startupWin = null;
+	});
+	void startupWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(STARTUP_HTML)}`);
+	// Let it paint before the synchronous start work (backup) holds the thread.
+	return new Promise((resolve) => {
+		startupWin.webContents.once("did-finish-load", () => setTimeout(resolve, 50));
+		setTimeout(resolve, 1500);
+	});
+}
+
+let quitting = false;
+
 async function main() {
 	app.on("window-all-closed", () => {
 		chatgpt?.pause();
@@ -653,11 +706,16 @@ async function main() {
 	});
 
 	// The child must not outlive us — cover every quit path.
-	app.on("before-quit", killServer);
+	app.on("before-quit", () => {
+		quitting = true;
+		killServer();
+	});
 	process.on("exit", killServer);
 	process.on("SIGHUP", killServer);
 
 	await app.whenReady();
+	// Only the packaged app waits for its own server; dev points at a running one.
+	if (!process.env.LH_DEV_URL) await showStartupWindow();
 
 	// Dev mode: point at a running `next dev` server (LH_DEV_URL) — no
 	// spawn, no packaging, full HMR. The rest of this shell still applies
@@ -701,6 +759,8 @@ async function main() {
 		app.on("before-quit", () => safeBackup("quit"));
 		log(`starting server: ${serverEntry()}`);
 		log(`data dir: ${DATA_DIR()}${fs.existsSync(AUTH_FILE()) ? " · auth.json: present" : " · auth.json: ABSENT (no BYOK keys yet)"}`);
+		// Closed the starting window already: don't start a server for nobody.
+		if (quitting) return;
 		await startServer(new URL(url).port);
 		await waitUntilUp(url);
 		log(`server up: ${url}`);
@@ -772,7 +832,19 @@ async function main() {
 	app.on("activate", () => {
 		if (BrowserWindow.getAllWindows().length === 0) reopenWindow();
 	});
-	createWindow(url);
+	// Closed the starting window while waiting: the app is quitting — stop here.
+	if (quitting) return;
+	const win = createWindow(url);
+	// The starting window goes once the real one is on screen (shown first,
+	// so the window count never drops to zero in between).
+	win.once("ready-to-show", () => {
+		if (startupWin && !startupWin.isDestroyed()) {
+			const b = startupWin.getBounds();
+			if (startupWin.isMaximized()) win.maximize();
+			else win.setBounds(b);
+			startupWin.destroy();
+		}
+	});
 	log(`window open: ${url}`);
 	// Startup + 24h checks stay main-owned and read the current preference.
 	// No renderer subscription is required; late loads retrieve the snapshot.
