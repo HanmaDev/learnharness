@@ -19,6 +19,7 @@
 // ─── Knowledge graph (vision §1 — global, cross-session) ────────────────────
 
 import type { CallUsage, ExtractionRunUsage } from "./chat.ts";
+import { filePathLabel, parseFilePaths } from "../file-paths.ts";
 
 /** One relation of the DERIVED view — chains are the stored truth (owner,
  *  2026-09-30: "the graph is a lossy image of what is truly stored"), and
@@ -366,7 +367,14 @@ export const TITLE_MAX_CHARS = 72;
  *  single spaces first, so boundaries are always single-space boundaries.
  *  Used on chat creation; deterministic so tests can pin it. */
 export function titleFromPrompt(prompt: string): string {
-	const oneLine = prompt.replace(/\s+/g, " ").trim();
+	// Fork (2026-11-09): attached files ride in the prompt as `path` tokens —
+	// a title of "`C:\Users\…\1-zadaci…" says nothing. Titles come from the
+	// words; a prompt that is only attachments is named after the files.
+	const parts = parseFilePaths(prompt);
+	const words = parts.filter((p) => p.kind === "text").map((p) => p.text).join(" ");
+	const files = parts.flatMap((p) => (p.kind === "path" ? [filePathLabel(p.path)] : []));
+	const source = words.trim() ? words : files.join(", ");
+	const oneLine = source.replace(/\s+/g, " ").trim();
 	if (oneLine.length <= TITLE_MAX_CHARS) return oneLine;
 	// Last space among the first TITLE_MAX_CHARS characters; the cut sits
 	// before it so no trailing space rides into the title.

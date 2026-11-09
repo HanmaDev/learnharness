@@ -53,4 +53,16 @@ describe("titleFromPrompt (smart truncation)", () => {
 		assert.ok(!out.slice(0, -1).endsWith(" "));
 		assert.ok(out.endsWith("…"));
 	});
+
+	it("attached file paths never become the title (fork, 2026-11-09)", () => {
+		const tick = (p: string) => "`" + p + "`";
+		const prompt = `${tick(String.raw`C:\Users\me\Zbirka\1-zadaci-88-92.jpg`)} ${tick(String.raw`C:\Users\me\Zbirka\2-zadaci-93-98.jpg`)} Ovo su zadaci iz zbirke, poglavlje 2`;
+		assert.equal(titleFromPrompt(prompt), "Ovo su zadaci iz zbirke, poglavlje 2");
+		assert.equal(titleFromPrompt("Explain `/home/me/notes.md` to me"), "Explain to me");
+	});
+
+	it("a prompt that is only attachments is named after the files", () => {
+		assert.equal(titleFromPrompt("`C:\\Users\\me\\a.jpg` `C:\\Users\\me\\b.jpg`"), "a.jpg, b.jpg");
+		assert.equal(titleFromPrompt("`not a rooted path`"), "`not a rooted path`", "plain code spans stay as text");
+	});
 });
