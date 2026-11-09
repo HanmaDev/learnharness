@@ -1314,11 +1314,12 @@ function bridgeContext() {
 	return normalizeContext({ systemPrompt: "You are a tutor.", messages: [{ role: "user", content: "hi", timestamp: 0 }], tools: [READ_TOOL] });
 }
 
-test("bridgeStatusFromInit: connected, failed/pending = missing, unlisted or other lines = no verdict", async () => {
+test("bridgeStatusFromInit: connected; failed/needs-auth = missing; pending, unlisted or other lines = no verdict", async () => {
 	const { bridgeStatusFromInit } = await import("../src/agent/claude-code/stream.ts");
 	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("connected"))), "connected");
 	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("failed"))), "missing");
-	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("pending"))), "missing");
+	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("needs-auth"))), "missing");
+	assert.equal(bridgeStatusFromInit(JSON.parse(initLine("pending"))), null, "still connecting is not a failure");
 	assert.equal(bridgeStatusFromInit(JSON.parse(initLine(null))), null);
 	assert.equal(bridgeStatusFromInit({ type: "stream_event" }), null);
 });
@@ -1344,4 +1345,18 @@ test("a turn whose bridge fails twice ends with a clear error, never a tool-less
 	assert.equal(last.error.errorMessage, BRIDGE_MISSING_MESSAGE);
 	assert.equal(count(), 2);
 	assert.ok(!events.some((e) => e.type === "text_delta"), "no answer text without tools");
+});
+
+test("a pending bridge is not retried, and a tool-less turn ignores the bridge entirely", async (t) => {
+	const text = readFixtureLines("text.jsonl").slice(1);
+	const pending = twoRuns(t, [initLine("pending"), ...text], [initLine("connected"), ...text]);
+	const events = await collectEvents(createClaudeCodeStreamFunction(pending.runClaude)(CLAUDE_CODE_MODELS[0]!, bridgeContext(), { sessionId: SESSION_ID }));
+	assert.equal(getLastEvent(events).type, "done");
+	assert.equal(pending.count(), 1, "no restart while still connecting");
+
+	const toolless = twoRuns(t, [initLine("failed"), ...text], [initLine("failed"), ...text]);
+	const context = normalizeContext({ systemPrompt: "Title this.", messages: [{ role: "user", content: "hi", timestamp: 0 }], tools: [] });
+	const e2 = await collectEvents(createClaudeCodeStreamFunction(toolless.runClaude)(CLAUDE_CODE_MODELS[0]!, context, { sessionId: SESSION_ID }));
+	assert.equal(getLastEvent(e2).type, "done", "a turn without tools never waits on the bridge");
+	assert.equal(toolless.count(), 1);
 });

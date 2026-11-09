@@ -10,7 +10,7 @@ import { listTrackerProblems, trackerAvailable, trackerFacets, trackerImageFile,
 import { fieldsMatch, parseArchiveQuery, titleFields } from "./tracker-match.ts";
 import { stores } from "./stores.ts";
 import { makeCardsFor, planStepsText, problemEditFor, problemListText } from "./teacher-records.ts";
-import type { AgentAids } from "../agent/tools/aids.ts";
+import type { AgentAids, MakeCardInput } from "../agent/tools/aids.ts";
 import { wolframAvailable, wolframLlmQuery } from "./wolfram.ts";
 import { fetchTranscript, transcriptMarkdown } from "./youtube.ts";
 
@@ -53,8 +53,11 @@ export function agentAids(chatId?: string): AgentAids {
 					// Fork (2026-11-09): the learner's records, changed on request.
 					problemList: (f) => problemListText(chatId, f),
 					problemEdit: (input) => problemEditFor(chatId, input),
-					makeCards: (cards) => makeCardsFor(chatId, cards),
-					planSteps: safePlanSteps(chatId),
+					// Cards live in a teaching course's deck; practice chats have no
+					// plan and no deck (Kartice skips them), so they don't get the tool.
+					...(stores.chatStore.getChat(chatId)?.kind === "practice"
+						? {}
+						: { makeCards: (cards: MakeCardInput[]) => makeCardsFor(chatId, cards), planSteps: safePlanSteps(chatId) }),
 				}
 			: {}),
 		...(wolframAvailable() ? { wolfram: (q: string, signal?: AbortSignal) => wolframLlmQuery(q, signal) } : {}),

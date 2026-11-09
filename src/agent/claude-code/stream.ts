@@ -81,11 +81,14 @@ export function bridgeStatusFromInit(line: unknown): "connected" | "missing" | n
 	if (!line || typeof line !== "object") return null;
 	const l = line as { type?: unknown; subtype?: unknown; mcp_servers?: unknown };
 	if (l.type !== "system" || l.subtype !== "init" || !Array.isArray(l.mcp_servers)) return null;
-	// A server passed with --mcp-config is always listed, with its status
-	// ("connected", "failed", "pending", …); not listed at all = no verdict.
+	// A server passed with --mcp-config is listed with its status. In print
+	// mode the CLI waits for it (up to 30 s) and reports "failed" if it never
+	// answers (measured, Claude Code 2.1.319). Only a final failure counts:
+	// "pending" (background connecting) or an unlisted server = no verdict.
 	const server = (l.mcp_servers as Array<{ name?: unknown; status?: unknown }>).find((x) => x && x.name === BRIDGE_SERVER_NAME);
 	if (!server) return null;
-	return server.status === "connected" ? "connected" : "missing";
+	if (server.status === "connected") return "connected";
+	return server.status === "failed" || server.status === "needs-auth" ? "missing" : null;
 }
 const NO_STOP_REASON_MESSAGE = "claude CLI ended the message without a stop reason";
 const NOT_SIGNED_IN_ERROR = "authentication_failed";
@@ -497,6 +500,10 @@ class ClaudeProcess implements LiveProcess {
 		this.admitted = [];
 		this.conversation = structuredClone(conversationForReuse(messages));
 		this.turn = turn;
+		// The retry closure belongs to the first turn: a continued process is
+		// never retired and restarted.
+		this.onBridgeMissing = undefined;
+		this.expectsBridge = false;
 		this.turn.setContextWindow(this.contextWindow);
 		this.sourceComplete = this.sourceCalls.length > 0;
 		this.setSignal(signal);
@@ -582,7 +589,10 @@ class ClaudeProcess implements LiveProcess {
 	private handleLine(line: string): void {
 		if (this.stopping || !line.trim()) return;
 		const raw: unknown = JSON.parse(line);
-		if (this.expectsBridge && bridgeStatusFromInit(raw) === "missing") {
+		const bridge = this.expectsBridge ? bridgeStatusFromInit(raw) : null;
+		// Only this process's first init line is judged.
+		if (bridge) this.expectsBridge = false;
+		if (bridge === "missing") {
 			console.error(`claude CLI started without the ${BRIDGE_SERVER_NAME} tool bridge:`, JSON.stringify((raw as { mcp_servers?: unknown }).mcp_servers));
 			if (this.onBridgeMissing?.()) {
 				this.retired = true;

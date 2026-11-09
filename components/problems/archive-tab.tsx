@@ -59,6 +59,8 @@ const DOT: Record<Status, string> = { solved: "bg-green-500", again: "bg-amber-5
 
 function statusOf(e: ProblemEntry | undefined): Status {
 	if (!e) return "none";
+	// A planned problem (no attempts yet) is still "not done".
+	if (e.attempts.length === 0) return "none";
 	return resolveDate(e) ? "again" : "solved";
 }
 

@@ -81,3 +81,21 @@ describe("teacher: cards", () => {
 		assert.match(makeCardsFor(other.id, [{ nodeId: "x", front: "Q", back: "A" }]), /no plan steps/);
 	});
 });
+
+describe("teacher: which agents get the tools", () => {
+	it("a teaching session gets all three; a practice session gets the log tools but not make_cards", async () => {
+		const { agentAids } = await import("../src/server/aids.ts");
+		const teach = agentAids(chat.id);
+		assert.ok(teach.problemList && teach.problemEdit && teach.makeCards);
+		const practice = chatStore.createChat("teacher records practice", "practice");
+		try {
+			const aids = agentAids(practice.id);
+			assert.ok(aids.problemList && aids.problemEdit, "practice manages the log");
+			assert.equal(aids.makeCards, undefined, "no deck in practice");
+		} finally {
+			fs.rmSync(path.join(PATHS.chats, `${practice.id}.json`), { force: true });
+		}
+		const prober = agentAids();
+		assert.equal(prober.problemEdit ?? prober.makeCards ?? prober.logProblem, undefined, "the prober gets none");
+	});
+});
