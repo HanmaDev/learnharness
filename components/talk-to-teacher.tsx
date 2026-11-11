@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageCircleIcon, SendIcon, XIcon } from "lucide-react";
 import { PathInput } from "@/components/path-input";
+import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { finishDictation, joinDictation, useDictationTarget } from "@/components/dictation";
 import { useDictationGhost } from "@/components/dictation-state";
 import { cn } from "@/lib/utils";
@@ -11,9 +12,19 @@ import { cn } from "@/lib/utils";
  * Fork (2026-11-07): "Talk to the teacher" — the way out of a waiting
  * question that keeps your words. Sending sets every waiting question aside
  * (the teacher reads why) and delivers the message as a normal turn; the
- * teacher answers, then re-asks when it fits. Alt+T toggles it while the
- * dock is expanded. While open it owns dictation (the form releases it).
+ * teacher answers, then re-asks when it fits. Alt+T toggles it while a
+ * question waits (open or collapsed). While open it owns dictation (the form
+ * and the reading-thinking field release it).
+ * Fork (2026-11-11): images ride along (paste, drop, Photo, From phone), and
+ * the collapsed question bar opens it directly (`showOpener` false then:
+ * the bar carries the button, the question stays closed). The draft (words,
+ * images) survives the dock remounting after a refused send (`draftKey`).
  */
+const talkDrafts = new Map<string, { text: string; photos: string[] }>();
+
+/** A kept talk draft for this question (the panel reopens with it). */
+export const hasTalkDraft = (key: string | undefined) => !!key && talkDrafts.has(key);
+
 export function TalkToTeacher({
 	active,
 	open,
@@ -21,22 +32,44 @@ export function TalkToTeacher({
 	onTalk,
 	disabled = false,
 	dictationClaim = true,
+	showOpener = true,
+	draftKey,
 }: {
-	/** The dock is expanded — the shortcut is armed only then. */
+	/** Arms the Alt+T shortcut. */
 	active: boolean;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	/** Resolves false when the send was refused — the text stays. */
-	onTalk: (text: string) => Promise<boolean> | boolean | void;
+	onTalk: (text: string, photos: string[]) => Promise<boolean> | boolean | void;
 	disabled?: boolean;
-	/** The dock's dictation claim (false while a teach check sits unrevealed:
-	 *  the reading-thinking field owns speech then). */
+	/** Show the "Talk to the teacher instead" link while closed (the open
+	 *  question). The collapsed bar has its own button. */
+	showOpener?: boolean;
+	/** Whether the open field may claim dictation. */
 	dictationClaim?: boolean;
+	/** Keeps the draft across a remount (the waiting question's key). */
+	draftKey?: string;
 }) {
-	const [text, setText] = useState("");
-	const textRef = useRef("");
+	const kept = draftKey ? talkDrafts.get(draftKey) : undefined;
+	const [text, setText] = useState(kept?.text ?? "");
+	const textRef = useRef(kept?.text ?? "");
 	const inputRef = useRef<HTMLDivElement>(null);
 	const sendingRef = useRef(false);
+	const attach = usePhotoAttachments();
+	const restored = useRef(false);
+	useEffect(() => {
+		if (restored.current) return;
+		restored.current = true;
+		for (const id of kept?.photos ?? []) attach.addSnapshot(id);
+		// eslint-disable-next-line -- restore once, on mount
+	}, []);
+	const photoKey = attach.ids.join(",");
+	useEffect(() => {
+		if (!draftKey || !restored.current) return;
+		const photos = photoKey ? photoKey.split(",") : [];
+		if (!text && photos.length === 0) talkDrafts.delete(draftKey);
+		else talkDrafts.set(draftKey, { text, photos });
+	}, [draftKey, text, photoKey]);
 
 	const append = useCallback((t: string) => {
 		const v = joinDictation(textRef.current, t);
@@ -69,11 +102,15 @@ export function TalkToTeacher({
 		try {
 			await finishDictation(); // a spoken tail lands before we read the field
 			const message = textRef.current.trim();
-			if (!message) return;
-			const ok = await onTalk(message);
-			if (ok === false) return; // refused: keep the words, stay open
+			const photos = attach.ids;
+			if (!message && photos.length === 0) return;
+			if (attach.uploading) return;
+			const ok = await onTalk(message, photos);
+			if (ok === false) return; // refused: keep the words and images, stay open
+			if (draftKey) talkDrafts.delete(draftKey);
 			textRef.current = "";
 			setText("");
+			attach.clear();
 			onOpenChange(false);
 		} finally {
 			sendingRef.current = false;
@@ -81,6 +118,7 @@ export function TalkToTeacher({
 	};
 
 	if (!open) {
+		if (!showOpener) return null;
 		return (
 			<div className="flex justify-start px-1 pb-1">
 				<button
@@ -98,7 +136,7 @@ export function TalkToTeacher({
 	}
 
 	return (
-		<div data-talk-to-teacher="" data-testid="talk-to-teacher" className="mx-1 mb-1 rounded-xl border border-primary/40 bg-card/80 px-3 py-2">
+		<div {...attach.areaProps} data-talk-to-teacher="" data-testid="talk-to-teacher" className="mx-1 mb-1 rounded-xl border border-primary/40 bg-card/80 px-3 py-2">
 			<div className="flex items-center justify-between pb-1">
 				<span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Talk to the teacher</span>
 				<button
@@ -132,15 +170,16 @@ export function TalkToTeacher({
 						void send();
 					}
 				}}
-				placeholder="Stop, ask, or tell the teacher how to teach. The question waits; it'll come back."
+				placeholder="Stop, ask, or tell the teacher how to teach (paste images too). The question waits; it'll come back."
 				className="field-sizing-content lh-input max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1.5 outline-none"
 			/>
+			<PhotoTray attach={attach} disabled={disabled} />
 			<div className="flex items-center justify-between pt-1 text-xs text-muted-foreground/80">
 				<span>Enter sends · Shift+Enter new line · Esc back to the question</span>
 				<button
 					type="button"
 					data-testid="talk-to-teacher-send"
-					disabled={disabled || text.trim().length === 0}
+					disabled={disabled || attach.uploading || (text.trim().length === 0 && attach.ids.length === 0)}
 					onClick={() => void send()}
 					className={cn(
 						"flex items-center gap-1 rounded-md border border-border px-2 py-1 font-medium text-foreground transition-colors",

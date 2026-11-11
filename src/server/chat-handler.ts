@@ -368,6 +368,13 @@ export async function handleChatInput(
 			case "plugin-question-answer":
 				input = { ...input, images: await prepareSubmissionImageChannels(input.images, conversationEngine) };
 				break;
+			case "interrupt":
+				// Fork: talk photos become inline images (snapshots are normalized
+				// at upload) — refuse BEFORE the write-ahead sets questions aside.
+				if (input.photos?.length && !conversationEngine.model.input.includes("image")) {
+					throw new ChatInputError("The selected model does not support images. Your input has been kept.");
+				}
+				break;
 		}
 	} catch (err) {
 		if (err instanceof ChatInputError) return Response.json({ error: err.message }, { status: 400 });

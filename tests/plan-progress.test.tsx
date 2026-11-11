@@ -228,6 +228,19 @@ describe("Talk to the teacher — the interrupt input", () => {
 		assert.throws(() => parseChatInput({ type: "interrupt", text: "  " }), ChatInputError);
 	});
 
+	it("carries pasted/attached photos as the message's inline images", () => {
+		const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		assert.deepEqual(parseChatInput({ type: "interrupt", text: "", photos: [id, id] }), { type: "interrupt", text: "", photos: [id] });
+		assert.throws(() => parseChatInput({ type: "interrupt", text: "x", photos: ["nope"] }), ChatInputError);
+		const waiting = quizCall("q1", "First?") as unknown as LhMessage;
+		const imageSnapshots = { [id]: { mimeType: "image/png" as const, data: "QUJD" } };
+		const appends = inputAppends({ messages: [waiting], imageSnapshots }, { type: "interrupt", text: "look at this", photos: [id] });
+		const user = appends.at(-1) as unknown as { role: string; content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> };
+		assert.equal(user.role, "user");
+		assert.deepEqual(user.content, [{ type: "text", text: "look at this" }, { type: "image", data: "QUJD", mimeType: "image/png" }]);
+		assert.throws(() => inputAppends({ messages: [waiting], imageSnapshots }, { type: "interrupt", text: "x", photos: ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"] }), /no longer available/);
+	});
+
 	it("sets EVERY waiting question aside, then appends the message; refuses with nothing waiting", () => {
 		const both: LhMessage = {
 			...quizCall("q1", "First?"),
@@ -261,11 +274,24 @@ describe("rendering", () => {
 		assert.ok(!without.includes("talk-to-teacher"));
 	});
 
+	it("a collapsed question offers Talk on its bar, without opening the question", () => {
+		const collapsed = renderToStaticMarkup(<QuestionDock toolName="quiz" toolCallId="q1" input={quizInput as never} expanded={false} onExpand={() => {}} onSubmit={() => {}} onTalk={() => {}} />);
+		assert.match(collapsed, /data-testid="question-dock-bar"/);
+		assert.match(collapsed, /data-testid="question-bar-talk"/);
+		assert.ok(!collapsed.includes('data-testid="talk-to-teacher-open"'), "the inline link belongs to the open question");
+		const reveal = renderToStaticMarkup(<QuestionDock toolName="quiz" toolCallId="q1" input={quizInput as never} expanded={false} reveal onExpand={() => {}} onSubmit={() => {}} onTalk={() => {}} />);
+		assert.match(reveal, /data-testid="teach-check-reveal"/);
+		assert.match(reveal, /data-testid="question-bar-talk"/);
+		const noTalk = renderToStaticMarkup(<QuestionDock toolName="quiz" toolCallId="q1" input={quizInput as never} expanded={false} onExpand={() => {}} onSubmit={() => {}} />);
+		assert.ok(!noTalk.includes("question-bar-talk"));
+	});
+
 	it("the open talk field is its own keyboard surface with Send", () => {
 		const html = renderToStaticMarkup(<TalkToTeacher active open onOpenChange={() => {}} onTalk={() => {}} />);
 		assert.match(html, /data-talk-to-teacher=""/);
 		assert.match(html, /data-testid="talk-to-teacher-send"/);
 		assert.match(html, /The question waits/);
+		assert.match(html, /data-photo-drop=""/, "images paste/drop into the talk field");
 	});
 
 	it("a set-aside question reads differently from a skipped one", () => {

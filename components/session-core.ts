@@ -946,7 +946,11 @@ export class SessionModel {
 				const question = (q.input as { question?: unknown } | null)?.question;
 				optimistic.push({ ...newAnswerResult(q.toolCallId, q.tool, setAsideAnswer(toolQuestionKind(q.tool), typeof question === "string" ? question : "")), id: localId() });
 			}
-			optimistic.push({ ...newUserMessage(input.text), id: localId() });
+			// Photos arrive with the server copy (inline images); until then
+			// the line says they are on their way, never an empty bubble.
+			const n = input.photos?.length ?? 0;
+			const note = n ? `[${n} image${n === 1 ? "" : "s"} attached]` : "";
+			optimistic.push({ ...newUserMessage(note ? (input.text ? `${input.text}\n\n${note}` : note) : input.text), id: localId() });
 		} else if (input.type === "answer") {
 			const tool = pendingCallTool(this.nativeHistory(), input.toolCallId) ?? "quiz";
 			const result = { ...newAnswerResult(input.toolCallId, tool, input.answer), id: localId() };

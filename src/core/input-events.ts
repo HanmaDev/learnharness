@@ -82,8 +82,9 @@ export type ChatInput =
 	 *  only with nothing active (mid-problem input rides the dock). */
 	| { type: "next" }
 	/** Fork: "Talk to the teacher" — set every waiting question aside and
-	 *  send the learner's message instead of an answer. */
-	| { type: "interrupt"; text: string };
+	 *  send the learner's message instead of an answer. `photos` are
+	 *  snapshot ids (paste/attach/phone); they land as the message's images. */
+	| { type: "interrupt"; text: string; photos?: string[] };
 
 /** A wake-pipeline steer delivery — same turn composition, server-origin.
  *  Wave C (2026-09-26): the idle wake carries EVERY queued marker as its
@@ -292,11 +293,13 @@ export function parseChatInput(input: unknown): ChatInput {
 		}
 		case "next":
 			return { type: "next" };
-		case "interrupt":
-			if (typeof i.text !== "string" || (i.text as string).trim().length === 0) {
-				throw new ChatInputError("interrupt input requires non-empty text");
+		case "interrupt": {
+			const photos = parsePhotoIds(i.photos);
+			if (typeof i.text !== "string" || ((i.text as string).trim().length === 0 && photos.length === 0)) {
+				throw new ChatInputError("interrupt input requires non-empty text or photos");
 			}
-			return { type: "interrupt", text: i.text };
+			return { type: "interrupt", text: i.text, ...(photos.length ? { photos } : {}) };
+		}
 		default:
 			throw new ChatInputError(`unknown input type: ${String(i.type)}`);
 	}
@@ -322,6 +325,15 @@ function parsePhotoIds(value: unknown): string[] {
 		throw new ChatInputError(`images must be up to ${MAX_PHOTOS_PER_SUBMISSION} snapshot ids`);
 	}
 	return [...new Set(value as string[])];
+}
+
+/** Fork: a talk message's photos become ordinary inline user-message
+ *  images (the composer's channel), so the transcript and model see them
+ *  with no photo-specific plumbing. */
+function interruptImages(record: { imageSnapshots?: Record<string, { mimeType: "image/png" | "image/jpeg"; data: string }> }, ids: readonly string[] | undefined): ImageContent[] | undefined {
+	if (!ids?.length) return undefined;
+	resolvePhotos(record, ids);
+	return ids.map((id) => ({ type: "image" as const, data: record.imageSnapshots![id]!.data, mimeType: record.imageSnapshots![id]!.mimeType }));
 }
 
 /** Check photo ids against the record's snapshots. The record keeps IDS
@@ -378,7 +390,7 @@ export function inputAppends(
 					return newAnswerResult(q.toolCallId, q.tool, setAsideAnswer(toolQuestionKind(q.tool), typeof question === "string" ? question : ""));
 				}),
 				...notice(),
-				newUserMessage(input.text),
+				newUserMessage(input.text, interruptImages(record, input.photos)),
 			];
 		}
 		case "continue":

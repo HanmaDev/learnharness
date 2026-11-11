@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ViewReaderRef, NativeQuestionViewState } from "./session-view-readers";
-import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
+import { ArrowDownIcon, ChevronRightIcon, MessageCircleIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
@@ -13,7 +13,7 @@ import { useDictationGhost } from "@/components/dictation-state";
 import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { MarkdownInsideControl } from "@/components/md-blocks";
-import { TalkToTeacher } from "@/components/talk-to-teacher";
+import { hasTalkDraft, TalkToTeacher } from "@/components/talk-to-teacher";
 import { ExerciseForm } from "@/components/exercise-form";
 import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { QuestionPreview } from "@/components/question-preview";
@@ -119,7 +119,10 @@ export interface QuestionDockProps {
 	compactionRunning?: boolean;
 	/** Fork: "Talk to the teacher" — set the question aside and send this
 	 *  message instead. Absent = no talk affordance (tests, old callers). */
-	onTalk?: (text: string) => Promise<boolean> | boolean | void;
+	onTalk?: (text: string, photos?: string[]) => Promise<boolean> | boolean | void;
+	/** Fork: the talk field opened/closed — the page's reading-thinking
+	 *  field releases dictation while it is open. */
+	onTalkOpenChange?: (open: boolean) => void;
 }
 
 export function QuestionDock({
@@ -141,10 +144,31 @@ export function QuestionDock({
 	dictationClaim = true,
 	compactionRunning = false,
 	onTalk,
+	onTalkOpenChange,
 	workingRef,
 }: QuestionDockProps) {
-	// Fork: the talk field, open/closed (it owns dictation while open).
-	const [talkOpen, setTalkOpen] = useState(false);
+	// Fork: the talk field, open/closed (it owns dictation while open). A
+	// draft kept from a refused send reopens it.
+	const [talkOpen, setTalkOpen] = useState(() => hasTalkDraft(toolCallId));
+	useEffect(() => {
+		onTalkOpenChange?.(talkOpen);
+	}, [talkOpen, onTalkOpenChange]);
+	useEffect(() => () => onTalkOpenChange?.(false), [onTalkOpenChange]);
+	// Fork (2026-11-11): the talk field lives OUTSIDE the hidden question, so
+	// the collapsed bar's Talk button opens it without opening the question.
+	// Always mounted while a question waits: Alt+T and attached images stay.
+	const talk = onTalk ? (
+		<TalkToTeacher
+			active
+			open={talkOpen}
+			onOpenChange={setTalkOpen}
+			onTalk={onTalk}
+			disabled={compactionRunning}
+			showOpener={expanded}
+			draftKey={toolCallId}
+		/>
+	) : null;
+	const openTalk = onTalk ? () => setTalkOpen(true) : undefined;
 	// The probe-phase names (owner, 2026-10-09) canonicalize onto their
 	// teach twins for every dock concern — parse dispatch, labels, kinds:
 	// the probe quiz ("probe") is quiz-shaped, the probe free-recall
@@ -177,6 +201,7 @@ export function QuestionDock({
 						variant={reveal ? "reveal" : "collapsed"}
 						toolLabel="Exercise"
 						label={exercise.type === "predict" ? "Prediction" : undefined}
+						onTalk={talkOpen ? undefined : openTalk}
 					/>
 				)}
 				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
@@ -188,10 +213,8 @@ export function QuestionDock({
 						dictationClaim={dictationClaim && !talkOpen}
 						compactionRunning={compactionRunning}
 					/>
-					{onTalk && (
-						<TalkToTeacher active={expanded} open={talkOpen} onOpenChange={setTalkOpen} onTalk={onTalk} disabled={compactionRunning} dictationClaim={dictationClaim} />
-					)}
 				</div>
+				{talk}
 			</>
 		);
 	}
@@ -213,6 +236,7 @@ export function QuestionDock({
 							? "Prediction"
 							: undefined
 					}
+					onTalk={talkOpen ? undefined : openTalk}
 				/>
 			)}
 			<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
@@ -234,17 +258,8 @@ export function QuestionDock({
 					dictationClaim={dictationClaim && !talkOpen}
 					compactionRunning={compactionRunning}
 				/>
-				{onTalk && (
-					<TalkToTeacher
-						active={expanded}
-						open={talkOpen}
-						onOpenChange={setTalkOpen}
-						onTalk={onTalk}
-						disabled={compactionRunning}
-						dictationClaim={dictationClaim}
-					/>
-				)}
 			</div>
+			{talk}
 		</>
 	);
 }
@@ -280,6 +295,7 @@ export function QuestionDockBar({
 	variant = "collapsed",
 	label,
 	toolLabel,
+	onTalk,
 }: {
 	toolName: "quiz" | "ask_user_question" | "explain";
 	question: string;
@@ -292,14 +308,29 @@ export function QuestionDockBar({
 	/** The chip's TOOL display name (owner 2026-10-09): probe-phase calls
 	 *  label Probe/Recall — the phase boundary visible in the composer. */
 	toolLabel?: string;
+	/** Fork: open "Talk to the teacher" without opening the question. */
+	onTalk?: () => void;
 }) {
+	const talkButton = onTalk ? (
+		<button
+			type="button"
+			data-testid="question-bar-talk"
+			title="Talk to the teacher (Alt+T) — the question stays closed and waits"
+			onClick={onTalk}
+			className="flex shrink-0 items-center gap-1.5 self-stretch px-3 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+		>
+			<MessageCircleIcon className="size-3.5" />
+			Talk
+		</button>
+	) : null;
 	if (variant === "reveal") {
 		return (
+			<div className="dock-variant flex items-stretch">
 			<button
 				type="button"
 				data-testid="teach-check-reveal"
 				onClick={onExpand}
-				className="dock-variant flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+				className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
 			>
 				<span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
 					<PlayIcon className="size-3.5" />
@@ -314,14 +345,17 @@ export function QuestionDockBar({
 					Open <ChevronRightIcon className="size-3.5" />
 				</span>
 			</button>
+			{talkButton}
+			</div>
 		);
 	}
 	return (
+		<div className="dock-variant flex items-stretch">
 		<button
 			type="button"
 			data-testid="question-dock-bar"
 			onClick={onExpand}
-			className="dock-variant flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/40"
+			className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent/40"
 		>
 			<span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				{label ??
@@ -335,6 +369,8 @@ export function QuestionDockBar({
 				Answer <ArrowDownIcon className="size-3.5" />
 			</span>
 		</button>
+		{talkButton}
+		</div>
 	);
 }
 

@@ -2168,11 +2168,11 @@ export function Chat({
 							placeholder={nextReady ? "Ask anything, or press Enter for the next one." : undefined}
 						/>
 					}
-					onTalk={(text) => {
+					onTalk={(text, photos) => {
 						// Fork: "Talk to the teacher" — every waiting question is set
 						// aside (the teacher reads why) and the message runs a turn.
 						if (!pending) return false;
-						return send({ type: "interrupt", text });
+						return send({ type: "interrupt", text, ...(photos?.length ? { photos } : {}) });
 					}}
 					onSubmitAnswer={(output) => {
 						if (!pending) return;
@@ -2563,7 +2563,7 @@ export function DockOverlay({
 	composer: React.ReactNode;
 	onSubmitAnswer: (output: QuestionAnswerData) => void;
 	/** Fork: "Talk to the teacher" from a waiting question. */
-	onTalk?: (text: string) => Promise<boolean> | boolean | void;
+	onTalk?: (text: string, photos?: string[]) => Promise<boolean> | boolean | void;
 	/** The model control's pass-through (the stats bar hosts it). */
 	chatId: string;
 	onModelChange: (model: string | undefined) => void;
@@ -2604,6 +2604,9 @@ export function DockOverlay({
 	// revealed, the normal collapse machine rules apply untouched.
 	const [revealed, setRevealed] = useState(false);
 	const revealPending = requiresReveal && !revealed;
+	// Fork: the question's talk field is open — it owns dictation then, even
+	// while a teach check still sits behind its reveal card.
+	const [talkOpen, setTalkOpen] = useState(false);
 
 	const pendingId = pluginQuestion ? pluginQuestionOccurrenceKey(pluginQuestion.occurrence) : unreadablePlugin ? "unreadable-plugin-question" : pending?.key ?? null;
 	const readingInputRef = useRef<HTMLDivElement>(null);
@@ -2981,7 +2984,7 @@ export function DockOverlay({
 										}
 									: undefined
 							}
-							claim={revealPending}
+							claim={revealPending && !talkOpen}
 						/>
 					)}
 					<div ref={shellRef} data-attachment-composer="" className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
@@ -3022,6 +3025,7 @@ export function DockOverlay({
 									onExpand={expandAndReveal}
 									onSubmit={onSubmitAnswer}
 									onTalk={onTalk}
+									onTalkOpenChange={setTalkOpen}
 									onPrepareSubmission={onPrepareBuiltin}
 									hasPendingInput={onBuiltinPendingInput}
 									preparing={preparing}
