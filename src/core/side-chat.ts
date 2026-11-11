@@ -226,6 +226,10 @@ export interface SideAskInput {
 	requestId?: string;
 	/** Current unsubmitted working; reference context, not a submitted answer. */
 	working?: string;
+	/** Fork (2026-11-11): with `anchor`, start a NEW topic under this
+	 *  client-minted id instead of continuing the segment's thread (the
+	 *  side panel's tabs: every /btw and "+" is its own topic). */
+	newThreadId?: string;
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -288,7 +292,11 @@ export function parseSideAskInput(raw: unknown): SideAskInput {
 		return { threadId, text, quotes: quotes.map((q) => clip(q, SIDE_QUOTE_MAX_CHARS)), ...extra, ...references };
 	}
 	if (body.anchor === undefined) throw new SideChatInputError("either threadId or anchor is required");
-	return { anchor: parseSideAnchor(body.anchor), text, quotes: quotes.map((q) => clip(q, SIDE_QUOTE_MAX_CHARS)), ...extra, ...references };
+	if (body.newThreadId !== undefined && (typeof body.newThreadId !== "string" || !ID_RE.test(body.newThreadId) || !body.newThreadId.startsWith("side_"))) {
+		throw new SideChatInputError("newThreadId is invalid");
+	}
+	const fresh = typeof body.newThreadId === "string" ? { newThreadId: body.newThreadId } : {};
+	return { anchor: parseSideAnchor(body.anchor), text, quotes: quotes.map((q) => clip(q, SIDE_QUOTE_MAX_CHARS)), ...extra, ...references, ...fresh };
 }
 
 /** Parse the window-state body ({open: boolean}). */

@@ -4,7 +4,7 @@
  * Closing detaches a view; messages are already saved, and returning can
  * subscribe to a still-running answer. No close-time commits or tutor notes. */
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { serializeCitation, sideSegmentId, type LhMessage, type TextSelector, type SideChatMessage, type SideChatThread } from "@/src/core";
+import { newSideThreadId, serializeCitation, sideSegmentId, type LhMessage, type TextSelector, type SideChatMessage, type SideChatThread } from "@/src/core";
 import { useServerEvent, useServerResync } from "./server-events";
 
 export type SideThreadAnchor = { kind: "range"; range: Range } | { kind: "element"; element: HTMLElement } | { kind: "composer" };
@@ -14,6 +14,10 @@ export interface SideThreadOpenArgs {
 	passage?: SidePassage;
 	sourceMessageId?: string;
 	questionCallId?: string;
+	/** Fork: open this saved topic (the side panel's tabs). */
+	threadId?: string;
+	/** Fork: a new topic — its own thread, even if this segment has one. */
+	fresh?: boolean;
 }
 export interface SideThreadState {
 	threadId: string;
@@ -26,9 +30,11 @@ export interface SideThreadState {
 	anchor: SideThreadAnchor;
 	error?: string;
 	failedQuestion?: string;
+	/** Fork: a new topic not saved yet (asked with newThreadId). */
+	fresh?: boolean;
 }
 export type SideThreadAction =
-	| { type: "open"; segmentId: string; anchor: SideThreadAnchor; passage?: SidePassage; thread?: SideChatThread }
+	| { type: "open"; segmentId: string; anchor: SideThreadAnchor; passage?: SidePassage; thread?: SideChatThread; threadId?: string; fresh?: boolean }
 	| { type: "snapshot"; thread: SideChatThread; answering?: boolean; text?: string }
 	| { type: "start"; threadId: string }
 	| { type: "accepted"; threadId: string }
@@ -40,10 +46,10 @@ export type SideThreadAction =
 export function sideThreadReducer(state: SideThreadState | null, action: SideThreadAction): SideThreadState | null {
 	if (action.type === "close") return null;
 	if (action.type === "open") {
-		const threadId = action.thread?.id ?? `side_${action.segmentId}`;
+		const threadId = action.thread?.id ?? action.threadId ?? `side_${action.segmentId}`;
 		if (state?.threadId === threadId) return { ...state, ...(action.passage ? { pendingPassage: action.passage } : {}) };
 		return { threadId, segmentId: action.segmentId, messages: action.thread?.messages ?? [], answering: false, streamText: "",
-			mode: state?.mode ?? "popover", anchor: action.anchor, pendingPassage: action.passage };
+			mode: state?.mode ?? "popover", anchor: action.anchor, pendingPassage: action.passage, ...(action.fresh ? { fresh: true } : {}) };
 	}
 	if (!state) return state;
 	if (action.type === "mode") return { ...state, mode: action.mode };
@@ -74,7 +80,7 @@ export function useSideThread(chatId: string, messages: readonly LhMessage[], ge
 	const serial = useRef(0);
 	const revision = useRef(0);
 	const refreshSerial = useRef(0);
-	const uncertain = useRef<{ segmentId: string; text: string; quote?: string; requestId: string } | null>(null);
+	const uncertain = useRef<{ segmentId: string; threadId: string; text: string; quote?: string; requestId: string } | null>(null);
 	const drafts = useRef(new Map<string, string>());
 	const [, syncExternalDraft] = useState(0);
 	const draftFor = useCallback((threadId: string) => drafts.current.get(threadId) ?? "", []);
@@ -150,11 +156,23 @@ export function useSideThread(chatId: string, messages: readonly LhMessage[], ge
 			.then((response) => consume(response, thread.id, token))
 			.catch((error) => { if (!controller.signal.aborted && token === connection.current?.token) dispatch({ type: "error", threadId: thread.id, error: String(error.message ?? error) }); });
 	}, [chatId, consume]);
-	const open = useCallback(({ anchor, passage, sourceMessageId, questionCallId }: SideThreadOpenArgs) => {
+	const open = useCallback(({ anchor, passage, sourceMessageId, questionCallId, threadId, fresh }: SideThreadOpenArgs) => {
+		if (threadId) {
+			const saved = threadsRef.current.find((entry) => entry.id === threadId);
+			if (!saved) return;
+			dispatch({ type: "open", segmentId: saved.anchor.messageId, anchor, thread: saved });
+			attach(saved);
+			return;
+		}
 		const source = sourceMessageId ?? passage?.sourceMessageId ?? (questionCallId ? messagesRef.current.find((message) => message.role === "assistant" &&
 			message.content.some((block) => block.type === "toolCall" && block.id === questionCallId))?.id : undefined);
 		const segmentId = sideSegmentId(messagesRef.current, source);
 		if (!segmentId) return;
+		if (fresh) {
+			connection.current?.controller.abort(); connection.current = null;
+			dispatch({ type: "open", segmentId, anchor, passage, threadId: newSideThreadId(), fresh: true });
+			return;
+		}
 		const thread = threadsRef.current.find((entry) => entry.anchor.messageId === segmentId);
 		dispatch({ type: "open", segmentId, anchor, passage, thread });
 		if (thread) attach(thread);
@@ -172,9 +190,9 @@ export function useSideThread(chatId: string, messages: readonly LhMessage[], ge
 		const quote = passage ? serializeCitation({ version: 1, chatId, messageId: passage.sourceMessageId, text: passage.text,
 			...(passage.selector ?? { start: 0, end: passage.text.length, prefix: "", suffix: "" }) }) : undefined;
 		const previous = uncertain.current;
-		const requestId = previous?.segmentId === current.segmentId && previous.text === text && previous.quote === quote
+		const requestId = previous?.segmentId === current.segmentId && previous.threadId === current.threadId && previous.text === text && previous.quote === quote
 			? previous.requestId : `ask_${crypto.randomUUID().replaceAll("-", "")}`;
-		uncertain.current = { segmentId: current.segmentId, text, quote, requestId };
+		uncertain.current = { segmentId: current.segmentId, threadId: current.threadId, text, quote, requestId };
 		connection.current?.controller.abort();
 		const controller = new AbortController(); const token = ++serial.current;
 		connection.current = { controller, token };
@@ -187,7 +205,7 @@ export function useSideThread(chatId: string, messages: readonly LhMessage[], ge
 				method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
 				body: JSON.stringify({ ...(existing ? { threadId: current.threadId } : { anchor: {
 					messageId: current.segmentId, partId: `${current.segmentId}-t0`, blockIndex: 0, blockText: "This teaching segment and its question.",
-				} }), text, quotes: passage ? [passage.text] : [], ...(quote ? { quoteCitations: [quote] } : {}), requestId, ...(retry ? { retry: true, threadId: current.threadId } : {}), ...(working ? { working } : {}) }),
+				}, ...(current.fresh ? { newThreadId: current.threadId } : {}) }), text, quotes: passage ? [passage.text] : [], ...(quote ? { quoteCitations: [quote] } : {}), requestId, ...(retry ? { retry: true, threadId: current.threadId } : {}), ...(working ? { working } : {}) }),
 			});
 			if (!response.ok) { await consume(response, current.threadId, token); return false; }
 			// Accepted and durable before streaming: the UI can clear its draft.
@@ -207,7 +225,17 @@ export function useSideThread(chatId: string, messages: readonly LhMessage[], ge
 		const current = stateRef.current;
 		if (current) void fetch(`/api/chats/${chatId}/side-chats/${current.threadId}/stop`, { method: "POST" }).catch(() => {});
 	}, [chatId]);
-	return { state, threads, open, close, ask, stop, draftFor, saveDraft, currentSegmentId: sideSegmentId(messages),
+	/** Fork: close a topic (it stays saved and reopenable) or reopen it. */
+	const setTopicOpen = useCallback(async (threadId: string, open: boolean): Promise<boolean> => {
+		const response = await fetch(`/api/chats/${chatId}/side-chats/${threadId}`, {
+			method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ open }),
+		}).catch(() => null);
+		const body = response?.ok ? await response.json().catch(() => null) as { thread?: SideChatThread } | null : null;
+		if (!body?.thread) return false;
+		adopt(body.thread);
+		return true;
+	}, [chatId, adopt]);
+	return { state, threads, open, close, ask, stop, draftFor, saveDraft, setTopicOpen, currentSegmentId: sideSegmentId(messages),
 		expand: () => dispatch({ type: "mode", mode: "panel" }),
 		float: () => dispatch({ type: "mode", mode: "popover" }),
 		hasHistory: (sourceMessageId: string) => {

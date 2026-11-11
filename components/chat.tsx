@@ -56,8 +56,6 @@ import {
 	firstSourceTextParts,
 	cliContextWindowOf,
 	messageAnchorId,
-	sideEntryPoints,
-	sideSegmentId,
 	textPartMessageId,
 	kbdEventForAction as kbdEventForChat,
 	type ChatInput,
@@ -70,7 +68,7 @@ import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { PlanProgressChip, usePlanProgress } from "@/components/plan-progress";
 import { MermaidOverlay, SessionMermaidContext, type SessionImage } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, MessageCircleQuestionIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { PluginQuestionDock } from "./plugin-question-dock";
@@ -87,7 +85,8 @@ import { createCiteAction, type CitationEditTarget } from "@/components/citation
 import { CitationActionsContext, type CitationActions } from "@/components/citation-chip";
 import { CitationCommentPopover } from "@/components/citation-comment-popover";
 import { revealCitationSource } from "@/components/citation-source";
-import { createSideQuestionActions, SideThreadBody, SideThreadPanel, SideThreadPopover } from "@/components/side-thread";
+import { createSideQuestionActions } from "@/components/side-thread";
+import { SideChip, SidePanel, sideTopics } from "@/components/side-chat/side-panel";
 import { useSideThread, type SideThreadOpenArgs } from "@/components/use-side-thread";
 import { useRouter } from "next/navigation";
 import { HINT_REQUEST_PREFIX, PracticeDock } from "@/components/practice-dock";
@@ -340,7 +339,6 @@ export function Chat({
 	const textTarget = (): Extract<PluginSubmissionTarget, { type: "text" }> | undefined => surfaceTarget ? { type: "text", sessionId: chatId, sessionKind: kind === "practice" ? "practice" : "teaching", surfaceTarget, channels: ["content"] } : undefined;
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
-	const sideEntries = useMemo(() => sideEntryPoints(nativeMessages, messages), [nativeMessages, messages]);
 
 	// The reattach settled terminal → the sync-and-continue seam (below).
 	setReattachSettled(() => reattachSettledRef.current());
@@ -464,7 +462,7 @@ export function Chat({
 			const pluginQuestion = capturePluginQuestionDismissal(pluginDismissal.current.canonicalMessages);
 			const target = escAbortTarget({
 				abortAsk: abortAskRef.current !== null,
-				sideThread: sideThreadOpenRef.current,
+				sideThread: sidePanelOpenRef.current,
 				mermaidFocus: mermaidFocusRef.current !== null || figureFocusRef.current !== null,
 				planOpen: planOpenRef.current,
 				setupOpen: setupOpenRef.current,
@@ -472,7 +470,7 @@ export function Chat({
 				problem: activeProblemRef.current !== null,
 				busy: busyRef.current,
 			});
-			if (target === "side-thread") closeSideThreadRef.current();
+			if (target === "side-thread") closeSidePanelRef.current();
 			else if (target === "question") { pluginAbortTarget.current = pluginQuestion; setAbortAsk("question"); }
 			else if (target === "problem") setAbortAsk("problem");
 			else if (target === "turn") setAbortAsk("turn");
@@ -506,7 +504,6 @@ export function Chat({
 				const question = (p.input as { question?: string } | null)?.question ?? "";
 				const reading = readingThinkingRef.current.trim() || undefined;
 				clearReadingThinking();
-				void closeSideThreadRef.current(); // its note lands after the skip
 				const answer = dismissedAnswer(toolQuestionKind(p.tool), question);
 				void dismissQuestion(
 					p.toolCallId,
@@ -997,64 +994,58 @@ export function Chat({
 		if (activeProblem?.pluginProblem) return pluginProblemDraft(activeProblem.pluginProblem).thinking;
 		return workingRef.current;
 	});
-	const sideNavigation = useRef(0);
+	// The restored side panel has no dictation of its own (as before v0.6.0),
+	// so opening and closing topics never waits on a recording.
 	const closeSideThread = useCallback(() => {
 		const id = sideThread.state?.threadId;
-		if (!id) return;
-		const navigation = ++sideNavigation.current;
-		void recording.finishFor(`side:${id}`).then(() => {
-			if (navigation === sideNavigation.current) sideThread.close(id);
-		});
-	}, [recording.finishFor, sideThread.state?.threadId, sideThread.close]);
-	const openSideThread = useCallback((args: SideThreadOpenArgs) => {
-		const navigation = ++sideNavigation.current;
+		if (id) sideThread.close(id);
+	}, [sideThread.state?.threadId, sideThread.close]);
+	const openSideThread = useCallback((args: SideThreadOpenArgs) => sideThread.open(args), [sideThread.open]);
+	// Fork (restored side panel, 2026-11-11): the docked panel's visibility;
+	// sideThread.state is the selected topic (a fresh one = "new question").
+	const [sidePanelOpen, setSidePanelOpen] = useState(false);
+	const newSideTopic = useCallback(() => openSideThread({ anchor: { kind: "composer" }, fresh: true }), [openSideThread]);
+	const openSidePanel = useCallback(() => {
+		setSidePanelOpen(true);
+		if (sideThread.state) return;
+		const last = sideTopics(sideThread.threads).open.at(-1);
+		if (last) openSideThread({ threadId: last.id, anchor: { kind: "composer" } });
+		else newSideTopic();
+	}, [sideThread.state, sideThread.threads, openSideThread, newSideTopic]);
+	const closeSidePanel = useCallback(() => {
+		setSidePanelOpen(false);
+		closeSideThread();
+	}, [closeSideThread]);
+	// "/btw pitanje": a new topic, asked as soon as its view exists.
+	const btwPending = useRef<string | null>(null);
+	useEffect(() => {
 		const current = sideThread.state;
-		const source = args.sourceMessageId ?? args.passage?.sourceMessageId ?? (args.questionCallId ? nativeMessages.find((message) => message.role === "assistant" &&
-			message.content.some((block) => block.type === "toolCall" && block.id === args.questionCallId))?.id : undefined);
-		if (current && current.segmentId !== sideSegmentId(nativeMessages, source) && recording.active && recording.destinationId === `side:${current.threadId}`) {
-			void recording.finishFor(`side:${current.threadId}`).then(() => {
-				if (navigation === sideNavigation.current) sideThread.open(args);
-			});
-		} else sideThread.open(args);
-	}, [nativeMessages, recording.active, recording.destinationId, recording.finishFor, sideThread.open, sideThread.state]);
-	const goToCurrentSideStep = sideThread.state && sideThread.currentSegmentId && sideThread.state.segmentId !== sideThread.currentSegmentId
-		? () => openSideThread({ sourceMessageId: sideThread.currentSegmentId!, anchor: sideThread.state!.anchor }) : undefined;
-	const sideDictationFor = (id: string) => {
-		const destinationId = `side:${id}`;
-		const owns = recording.destinationId === destinationId;
-		return { phase: owns ? recording.phase : "idle" as const, active: owns && recording.active,
-			blocked: !owns && recording.active, error: owns ? recording.error : null, levelRef: recording.levelRef,
-			toggle: () => recording.toggleFor({ id: destinationId, append: (text) => sideThread.saveDraft(id, joinDictation(sideThread.draftFor(id), text), true) }),
-			finish: () => recording.finishFor(destinationId) };
-	};
-	const renderSideEntry = (sourceMessageId?: string) => {
-		if (!sourceMessageId) return null;
-		const hasHistory = sideThread.threads.some((thread) => thread.anchor.messageId === sourceMessageId && thread.messages.length > 0);
-		return <div className="mt-1 flex justify-end">
-			<Button type="button" variant="ghost" size="icon-xs" data-testid="side-conversation-button" data-side-segment-id={sourceMessageId}
-				data-has-history={hasHistory} aria-label={hasHistory ? "Open side conversation" : "Ask a side question"}
-				title={hasHistory ? "Open side conversation" : "Ask a side question"}
-				className={hasHistory ? "border border-border/60 text-muted-foreground" : "text-muted-foreground/40 hover:text-muted-foreground"}
-				onClick={(event) => openSideThread({ sourceMessageId, anchor: { kind: "element", element: event.currentTarget } })}>
-				<MessageCircleQuestionIcon aria-hidden className="size-3.5" fill="currentColor" fillOpacity={hasHistory ? 0.12 : 0} />
-			</Button>
-		</div>;
-	};
-	const sideThreadOpenRef = useRef(false);
-	sideThreadOpenRef.current = sideThread.state !== null;
-	const closeSideThreadRef = useRef(closeSideThread);
-	closeSideThreadRef.current = closeSideThread;
+		if (!btwPending.current || !current?.fresh || current.messages.length > 0 || current.answering) return;
+		const question = btwPending.current;
+		btwPending.current = null;
+		void sideThread.ask(question, false, current.threadId);
+	}, [sideThread.state?.threadId]);
+	const sidePanelOpenRef = useRef(false);
+	sidePanelOpenRef.current = sidePanelOpen;
+	const openSidePanelRef = useRef(openSidePanel);
+	openSidePanelRef.current = openSidePanel;
+	const closeSidePanelRef = useRef(closeSidePanel);
+	closeSidePanelRef.current = closeSidePanel;
 	const toggleQuestionThread = useCallback(() => {
 		if (!isInteractionScopeEligible(sessionFindScopeRef.current, controller)) return;
-		if (sideThreadOpenRef.current) closeSideThreadRef.current();
-		else openSideThread({ anchor: { kind: "composer" }, questionCallId: pendingRef.current?.toolCallId });
-	}, [controller, openSideThread]);
+		if (sidePanelOpenRef.current) closeSidePanelRef.current();
+		else openSidePanelRef.current();
+	}, [controller]);
 	useEffect(() => {
 		window.addEventListener(kbdEventForChat("toggle-question-thread"), toggleQuestionThread);
 		return () => window.removeEventListener(kbdEventForChat("toggle-question-thread"), toggleQuestionThread);
 	}, [toggleQuestionThread]);
 	// Advancing the lesson does not close or disable an old conversation.
-	const sideActions = useMemo(() => createSideQuestionActions({ open: openSideThread }), [openSideThread]);
+	// "Pitaj sa strane" over selected teacher text: a new topic with that quote.
+	const sideActions = useMemo(() => createSideQuestionActions({ open: (args) => {
+		setSidePanelOpen(true);
+		openSideThread({ ...args, fresh: true });
+	} }), [openSideThread]);
 	const selectionActions = useMemo(() => [citeAction, ...sideActions], [citeAction, sideActions]);
 	const router = useRouter();
 	const transcriptElementRef = useRef<HTMLElement | null>(null);
@@ -1568,6 +1559,17 @@ export function Chat({
 
 	const onSend = () => {
 		if (!isInteractionScopeEligible(sessionFindScopeRef.current, controller) || submissionRunner.occupied) return;
+		// Fork (side questions): "/btw <pitanje>" goes to the side panel, never
+		// to the teacher — works mid-turn too.
+		const btw = /^\/btw\s+([\s\S]+)$/i.exec(textRef.current.trim());
+		if (btw) {
+			setSidePanelOpen(true);
+			if (!sideThread.currentSegmentId) return; // nothing taught yet: the panel says so, the text stays
+			applyText("");
+			btwPending.current = btw[1]!.trim();
+			newSideTopic();
+			return;
+		}
 		if (openingDraftRef.current !== null) { deliverOpeningPrompt(textRef.current.trim(), true); return; }
 		void prepareText();
 	};
@@ -1738,6 +1740,7 @@ export function Chat({
 					)}
 					{kind !== "practice" && <CardsDueChip chatId={chatId} />}
 					{kind !== "practice" && planTree && <NotesChip chatId={chatId} />}
+					<SideChip count={sideTopics(sideThread.threads).open.length} active={sidePanelOpen} onClick={() => (sidePanelOpen ? closeSidePanel() : openSidePanel())} />
 					{/* The extraction ring (owner-locked redesign, 2026-09-24): fills
 					    with uncovered vs the chunk threshold, pulses while a run is in
 					    flight, vanishes when the graph is off. Click → the exact
@@ -1947,7 +1950,6 @@ export function Chat({
 														);
 													case "step-start":
 														return <Fragment key={`step-${pi}`}>
-															{renderSideEntry(sideEntries.get(m.id)?.get(pi))}
 															{teachBoundary ? <PhaseDivider phase="teach" /> : pi > 0 ? <Separator className="my-3" /> : null}
 														</Fragment>;
 													case "data-plan-block":
@@ -2006,7 +2008,6 @@ export function Chat({
 												}
 											})}
 										</MessageContent>
-										{m.role === "assistant" && renderSideEntry(sideEntries.get(m.id)?.get(m.parts.length))}
 									</Message>
 									)}
 								</Fragment>
@@ -2195,42 +2196,8 @@ export function Chat({
 					}}
 				/>
 				</Conversation>
-				{sideThread.state?.mode === "panel" && (
-					<SideThreadPanel>
-						<SideThreadBody
-							key={sideThread.state.threadId}
-							state={sideThread.state}
-							chatId={chatId}
-							draft={sideThread.draftFor(sideThread.state.threadId)}
-							readDraft={sideThread.draftFor.bind(null, sideThread.state.threadId)}
-							dictation={sideDictationFor(sideThread.state.threadId)}
-							onDraftChange={sideThread.saveDraft.bind(null, sideThread.state.threadId)}
-							onAsk={(text, retry) => sideThread.ask(text, retry, sideThread.state!.threadId)}
-							onStop={sideThread.stop}
-							onExpand={sideThread.expand}
-							onFloat={sideThread.float}
-							onClose={closeSideThread}
-							onCurrentStep={goToCurrentSideStep}
-						/>
-					</SideThreadPanel>
-				)}
-
-				{sideThread.state?.mode === "popover" && (
-					<SideThreadPopover
-						state={sideThread.state}
-						chatId={chatId}
-						draft={sideThread.draftFor(sideThread.state.threadId)}
-						readDraft={sideThread.draftFor.bind(null, sideThread.state.threadId)}
-						dictation={sideDictationFor(sideThread.state.threadId)}
-						onDraftChange={sideThread.saveDraft.bind(null, sideThread.state.threadId)}
-						composer={() => composerInputRef.current}
-						onAsk={(text, retry) => sideThread.ask(text, retry, sideThread.state!.threadId)}
-						onStop={sideThread.stop}
-						onExpand={sideThread.expand}
-						onFloat={sideThread.float}
-						onClose={closeSideThread}
-						onCurrentStep={goToCurrentSideStep}
-					/>
+				{sidePanelOpen && (
+					<SidePanel chatId={chatId} side={sideThread} onClose={closeSidePanel} onNewTopic={newSideTopic} />
 				)}
 
 				{/* The session-scoped focuses (chrome-melt wave, 2026-09-19): mounted

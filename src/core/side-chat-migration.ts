@@ -8,10 +8,11 @@
  * message after a learner input) and keeps at most one thread per segment;
  * the anchor is { messageId: segment, partId: `${segment}-t0`, blockIndex: 0 }
  * (src/server/side-chat.ts). The fork's threads were opened from a panel, so
- * each goes to the segment of the last teacher prose before it started;
- * threads landing in the same segment merge into one (messages in time
- * order), so none becomes unreachable. A thread with no teacher prose before
- * it stays in `sideThreads` — never dropped.
+ * each goes to the segment of the last teacher prose before it started. A
+ * thread with no teacher prose before it stays in `sideThreads` — never dropped.
+ * Restored panel (2026-11-11): side questions are TOPICS again — each old
+ * thread stays its own topic (several may share a segment) and keeps its
+ * open/closed state from the old panel.
  */
 import type { ChatRecord, SideChatMessage, SideChatThread } from "./contracts/chat.ts";
 import { SEND_TO_USER_TOOL, sendToUserText } from "./native-messages.ts";
@@ -33,6 +34,7 @@ interface LegacyThread {
 	id: string;
 	createdAt: string;
 	messages: LegacyMessage[];
+	closed?: boolean;
 }
 
 const isLegacyThread = (t: unknown): t is LegacyThread =>
@@ -67,13 +69,10 @@ function toMessage(m: LegacyMessage): SideChatMessage {
 	};
 }
 
-const byTime = (a: SideChatMessage, b: SideChatMessage) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0);
-
 export function migrateLegacySideThreads(record: ChatRecord): ChatRecord {
 	const legacy = record.sideThreads;
 	if (!Array.isArray(legacy) || legacy.length === 0) return record;
 	const threads = (record.sideChats ?? []).map((t) => ({ ...t, messages: [...t.messages] }));
-	const bySegment = new Map(threads.map((t) => [t.anchor.messageId, t]));
 	const migratedIds = new Set(threads.flatMap((t) => [t.id, ...t.messages.map((m) => m.id)]));
 	const kept: unknown[] = [];
 	for (const t of legacy) {
@@ -90,20 +89,14 @@ export function migrateLegacySideThreads(record: ChatRecord): ChatRecord {
 			continue;
 		}
 		const messages = t.messages.filter((m) => !migratedIds.has(m.id)).map(toMessage);
-		const existing = bySegment.get(segment);
-		if (existing) {
-			existing.messages = [...existing.messages, ...messages].sort(byTime);
-		} else {
-			const thread: SideChatThread = {
-				id: t.id,
-				anchor: { messageId: segment, partId: `${segment}-t0`, blockIndex: 0, blockText: prose.text },
-				open: false,
-				createdAt: t.createdAt,
-				messages,
-			};
-			threads.push(thread);
-			bySegment.set(segment, thread);
-		}
+		const thread: SideChatThread = {
+			id: t.id,
+			anchor: { messageId: segment, partId: `${segment}-t0`, blockIndex: 0, blockText: prose.text },
+			open: t.closed !== true,
+			createdAt: t.createdAt,
+			messages,
+		};
+		threads.push(thread);
 		migratedIds.add(t.id);
 		for (const m of messages) migratedIds.add(m.id);
 	}

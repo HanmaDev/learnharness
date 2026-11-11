@@ -95,6 +95,14 @@ describe("side ask input", () => {
 		assert.equal(input.anchor?.blockIndex, 2);
 	});
 
+	it("fork: accepts a new topic's id with an anchor, refuses a malformed one", () => {
+		assert.equal(parseSideAskInput({ anchor, text: "q", newThreadId: "side_abc_123" }).newThreadId, "side_abc_123");
+		assert.equal(parseSideAskInput({ anchor, text: "q" }).newThreadId, undefined);
+		for (const bad of ["../x", "abc", 5, "side_" + "x".repeat(200)]) {
+			assert.throws(() => parseSideAskInput({ anchor, text: "q", newThreadId: bad }), SideChatInputError);
+		}
+	});
+
 	it("accepts a follow-up and a retry by thread id", () => {
 		assert.equal(parseSideAskInput({ threadId: "side_x", text: "more" }).threadId, "side_x");
 		const retry = parseSideAskInput({ threadId: "side_x", retry: true });
@@ -372,6 +380,36 @@ describe("side chat service", () => {
 		assert.deepEqual(contexts.at(-1)!.messages.map((m) => m.role), ["system", "user", "assistant", "user", "assistant", "user"]);
 		assert.match(JSON.stringify(contexts.at(-1)!.messages), /first selection/);
 		assert.match(JSON.stringify(contexts.at(-1)!.messages), /second selection/);
+	});
+
+	it("fork: newThreadId starts a separate topic in the same segment; a retried id continues it", async () => {
+		const { service, chatId, anchor, answer } = setup();
+		answer("one");
+		const first = (await readAll(await service.ask(chatId, { anchor, text: "q1", quotes: [] }))).at(-1)!.thread!;
+		answer("two");
+		const topic = (await readAll(await service.ask(chatId, { anchor, text: "q2", quotes: [], newThreadId: "side_topic_b" }))).at(-1)!.thread!;
+		assert.equal(topic.id, "side_topic_b");
+		assert.notEqual(topic.id, first.id);
+		assert.equal(topic.anchor.messageId, first.anchor.messageId, "same teaching segment");
+		answer("three");
+		await readAll(await service.ask(chatId, { anchor, text: "q3", quotes: [], newThreadId: "side_topic_b" }));
+		const threads = chatStore.getChat(chatId)!.sideChats!;
+		assert.deepEqual(threads.map((t) => t.id), [first.id, "side_topic_b"]);
+		assert.deepEqual(threads[1]!.messages.map((m) => m.text), ["q2", "two", "q3", "three"]);
+		assert.deepEqual(threads[0]!.messages.map((m) => m.text), ["q1", "one"], "the first topic is untouched");
+	});
+
+	it("fork: a newThreadId that belongs to another segment is refused and saves nothing", async () => {
+		const { service, chatId, anchor, answer } = setup();
+		answer("one");
+		const first = (await readAll(await service.ask(chatId, { anchor, text: "q1", quotes: [] }))).at(-1)!.thread!;
+		const other = assistant([text("Another explanation.")]);
+		chatStore.saveMessages(chatId, [...chatStore.getChat(chatId)!.messages, newUserMessage("dalje"), other]);
+		const otherAnchor: SideChatAnchor = { messageId: other.id, partId: `${other.id}-t0`, blockIndex: 0, blockText: "Another explanation." };
+		const before = JSON.stringify(chatStore.getChat(chatId)!.sideChats);
+		const res = await service.ask(chatId, { anchor: otherAnchor, text: "hijack", quotes: [], newThreadId: first.id });
+		assert.equal(res.status, 409);
+		assert.equal(JSON.stringify(chatStore.getChat(chatId)!.sideChats), before);
 	});
 
 	it("refuses bad anchors, unknown threads and a busy thread; refusals save nothing", async () => {

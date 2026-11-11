@@ -20,7 +20,7 @@ import { isInteractionScopeEligible } from "./plugin-input-focus";
  * is an independent action that inserts a chip into the main/thinking field. */
 export function createSideQuestionActions({ open }: { open: (args: SideThreadOpenArgs) => void }): SelectionAction[] {
 	return [{
-		id: "side-ask", label: "Ask", ariaLabel: "Ask a side question about this selection", icon: MessageCircleQuestion, visible: () => true,
+		id: "side-ask", label: "Pitaj sa strane", ariaLabel: "Pitaj sa strane o označenom tekstu", icon: MessageCircleQuestion, visible: () => true,
 		disabledLabel: (capture) => capture.selector.text.length > SIDE_QUOTE_MAX_CHARS ? "Shorten selection" : null,
 		onSelect: (capture) => {
 			const { text, start, end, prefix, suffix } = capture.selector;

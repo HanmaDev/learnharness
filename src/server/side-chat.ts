@@ -132,11 +132,18 @@ export function createSideChatService(deps: SideChatDeps): SideChatService {
 		if (!target && input.anchor) {
 			const segment = sideSegmentId(record.messages, input.anchor.messageId);
 			if (!segment) return Response.json({ error: "The source is not a teaching segment in this session" }, { status: 400 });
-			target = threads.find((thread) => thread.anchor.messageId === segment) ?? newSideThread({
+			// Fork: a new topic gets its own thread (an id already present is a
+			// retried request for that same topic).
+			const existing = input.newThreadId ? threads.find((thread) => thread.id === input.newThreadId) : threads.find((thread) => thread.anchor.messageId === segment);
+			if (input.newThreadId && existing && existing.anchor.messageId !== segment) {
+				return Response.json({ error: "That side topic belongs to another teaching segment" }, { status: 409 });
+			}
+			const created = existing ? undefined : newSideThread({
 				...input.anchor, messageId: segment, partId: `${segment}-t0`, blockIndex: 0,
 				// The client chooses a segment, not what the tutor allegedly said.
 				blockText: userFacingTextOf(record.messages.find((message) => message.id === segment && message.role === "assistant")?.content ?? [], failedOutputCallIds(record.messages)).join("\n\n").slice(0, 4_000) || "This teaching segment and its associated question.",
 			});
+			target = existing ?? (input.newThreadId ? { ...created!, id: input.newThreadId } : created);
 		}
 		if (!target) return Response.json({ error: "A teaching segment or threadId is required" }, { status: 400 });
 		if (input.quoteCitations) {
