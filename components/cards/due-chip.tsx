@@ -13,7 +13,7 @@ export function NotesChip({ chatId }: { chatId: string }) {
 			title="Beleške ovog kursa"
 			className="flex shrink-0 items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground"
 		>
-			<NotebookTextIcon className="size-3.5 text-green-400" aria-hidden /> Beleške
+			<NotebookTextIcon className="size-3.5 text-success" aria-hidden /> Beleške
 		</Link>
 	);
 }
@@ -30,8 +30,8 @@ export function CardsDueChip({ chatId }: { chatId: string }) {
 			title="Kartice za ponavljanje"
 			className="flex shrink-0 items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground"
 		>
-			<LayersIcon className="size-3.5 text-amber-400" aria-hidden />
-			<span className="text-amber-400">{n}</span> za danas
+			<LayersIcon className="size-3.5 text-warning" aria-hidden />
+			<span className="text-warning">{n}</span> za danas
 		</Link>
 	);
 }

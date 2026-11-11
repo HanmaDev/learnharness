@@ -50,11 +50,11 @@ export function DeckView({ chatId, initialTab }: { chatId: string; initialTab: D
 			title={`Kartice · ${courseName(view.title)}`}
 			chips={
 				<span className="flex shrink-0 items-center gap-2 rounded-full border border-border/80 px-3 py-1 font-ui text-xs uppercase tracking-wide text-muted-foreground" data-testid="deck-chips">
-					Danas <b className="font-medium text-amber-400">{view.queue.dueCount}</b>
-					<span aria-hidden>·</span> Nove <b className="font-medium text-amber-400">{view.queue.newCount}</b>
+					Danas <b className="font-medium text-warning">{view.queue.dueCount}</b>
+					<span aria-hidden>·</span> Nove <b className="font-medium text-warning">{view.queue.newCount}</b>
 					{view.examDate && (
 						<>
-							<span aria-hidden>·</span> Ispit <b className="font-medium text-amber-400">{examLabel(view.examDate)}</b>
+							<span aria-hidden>·</span> Ispit <b className="font-medium text-warning">{examLabel(view.examDate)}</b>
 						</>
 					)}
 				</span>
@@ -70,7 +70,7 @@ export function DeckView({ chatId, initialTab }: { chatId: string; initialTab: D
 							onClick={() => setTab(id)}
 							className={cn(
 								"-mb-px cursor-pointer border-b-2 px-2 py-3.5 font-ui text-[15px] uppercase tracking-wider transition-colors",
-								tab === id ? "border-green-500! text-foreground" : "border-transparent! text-muted-foreground hover:text-foreground",
+								tab === id ? "border-success! text-foreground" : "border-transparent! text-muted-foreground hover:text-foreground",
 							)}
 						>
 							{label}
@@ -255,10 +255,10 @@ function AllTab({ view, onFlags, onNew }: { view: CourseCardsView; onFlags: (id:
 						onClick={() => setFilter(id)}
 						className={cn(
 							"h-10 cursor-pointer rounded-md border px-3 font-ui text-sm uppercase tracking-wider",
-							filter === id ? "border-green-500! text-green-400" : "border-border text-muted-foreground hover:text-foreground",
+							filter === id ? "border-success! text-success" : "border-border text-muted-foreground hover:text-foreground",
 						)}
 					>
-						{label} <b className={cn("ml-1 font-medium", id === "due" || id === "new" ? "text-amber-400" : "")}>{counts[id]}</b>
+						{label} <b className={cn("ml-1 font-medium", id === "due" || id === "new" ? "text-warning" : "")}>{counts[id]}</b>
 					</button>
 				))}
 				<span className="relative">
@@ -314,7 +314,7 @@ function AllTab({ view, onFlags, onNew }: { view: CourseCardsView; onFlags: (id:
 									</td>
 									<td className={cn("truncate px-4 py-3 whitespace-nowrap", paused ? "text-muted-foreground" : "text-foreground/85")}>{toSerbianLatin(c.nodeTitle ?? c.nodeId)}</td>
 									<td className="px-4 py-3 whitespace-nowrap">
-										{next.today ? <span className="rounded bg-amber-500/15 px-2 py-0.5 font-medium text-amber-400">{next.text}</span> : <span className="text-muted-foreground">{next.text}</span>}
+										{next.today ? <span className="rounded bg-warning/15 px-2 py-0.5 font-medium text-warning">{next.text}</span> : <span className="text-muted-foreground">{next.text}</span>}
 									</td>
 									<td className="px-4 py-3 text-center">{c.reps}</td>
 									<td className="px-4 py-3 text-center">{c.lapses}</td>
@@ -399,7 +399,7 @@ function RowMenu({ card, onFlags }: { card: Card; onFlags: (id: string, f: { sus
 
 function MenuItem({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
 	return (
-		<button type="button" onClick={onClick} className={cn("block w-full cursor-pointer rounded px-3 py-1.5 text-left text-sm hover:bg-accent", danger ? "text-red-400" : "text-foreground")}>
+		<button type="button" onClick={onClick} className={cn("block w-full cursor-pointer rounded px-3 py-1.5 text-left text-sm hover:bg-accent", danger ? "text-error" : "text-foreground")}>
 			{children}
 		</button>
 	);

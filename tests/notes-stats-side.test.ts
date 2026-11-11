@@ -5,10 +5,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { nodeMessages, nodeWindows, notesDocument, notesFileName, noteSteps, staleSteps } from "../src/core/notes.ts";
-import { openQuestionCallId, redactOpenQuestion, sideThreadTitle } from "../src/core/side-chat.ts";
 import { addStudySeconds, chatIdFromPath, emptyStudyLog, parseStudyLog, type StudyTimeLog } from "../src/core/study-time.ts";
 import { dailyStats, rangeDates, statsView, streaks } from "../src/core/stats.ts";
-import { parseSideAction } from "../src/server/side-chat.ts";
 import { localDate } from "../src/core/plan-progress.ts";
 import type { LhMessage } from "../src/core/native-messages.ts";
 
@@ -75,29 +73,6 @@ describe("topic notes", () => {
 	});
 });
 
-describe("side chats", () => {
-	it("hides the answer key of the question the learner is answering now", () => {
-		const msgs = [
-			...call("quiz", { nodeId: "a", question: "Old", correctAnswer: "x", explanation: "e" }, T0, { correct: true }),
-			...call("quiz", { nodeId: "b", question: "Open", correctAnswer: "SECRET", explanation: "WHY", options: [{ label: "o", value: "o" }] }, T0, "none"),
-		];
-		const open = openQuestionCallId(msgs);
-		assert.ok(open);
-		const red = JSON.stringify(redactOpenQuestion(msgs));
-		assert.doesNotMatch(red, /SECRET|WHY/);
-		assert.match(red, /"question":"Open"/);
-		assert.match(red, /"correctAnswer":"x"/, "answered questions keep their key");
-	});
-
-	it("titles and action parsing", () => {
-		assert.equal(sideThreadTitle("  Šta je   CDN?  "), "Šta je CDN?");
-		assert.ok(sideThreadTitle("x".repeat(80)).endsWith("…"));
-		assert.deepEqual(parseSideAction({ op: "ask", text: "q" }), { op: "ask", text: "q" });
-		assert.equal(typeof parseSideAction({ op: "close", threadId: "__proto__" }), "string");
-		assert.equal(typeof parseSideAction({ op: "make-card", threadId: "t" }), "string");
-	});
-});
-
 describe("study time", () => {
 	it("adds capped seconds per day and course; parses defensively", () => {
 		let log = addStudySeconds(emptyStudyLog(), "2026-11-08", 30, "chat_1");
@@ -154,16 +129,8 @@ describe("notes headings", () => {
 	});
 });
 
-import { openQuestionSummary } from "../src/core/side-chat.ts";
 import { notesMarker, questionKeys } from "../src/core/notes.ts";
-describe("review fixes (notes/side)", () => {
-	it("the side agent is told the open question, never its key", () => {
-		const msgs = call("quiz", { nodeId: "a", question: "Koja boja?", options: [{ label: "Crvena", value: "r" }, { label: "Plava", value: "b" }], correctAnswer: "b", explanation: "jer" }, T0, "none");
-		const s = openQuestionSummary(msgs)!;
-		assert.match(s, /Koja boja\?/);
-		assert.match(s, /Crvena \| Plava/);
-		assert.doesNotMatch(s, /jer|"b"/);
-	});
+describe("review fixes (notes)", () => {
 	it("the notes writer gets the real answers", () => {
 		const msgs = [
 			...call("quiz", { nodeId: "a", question: "Koja boja?", options: [{ label: "Crvena", value: "r" }, { label: "Plava", value: "b" }], correctAnswer: "b", explanation: "Nebo je plavo." }),

@@ -184,7 +184,7 @@ export function PhotoTray({ attach, disabled = false }: { attach: PhotoAttachmen
 				<SmartphoneIcon className="size-3.5" />
 				From phone
 			</button>
-			{attach.error && <span className="text-red-500">{attach.error}</span>}
+			{attach.error && <span className="text-error">{attach.error}</span>}
 			<input
 				ref={fileRef}
 				type="file"

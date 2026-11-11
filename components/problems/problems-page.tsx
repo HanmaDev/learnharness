@@ -38,7 +38,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone?: "am
 	return (
 		<div className="rounded-lg border border-border bg-white/[0.035] px-5 py-4" data-testid="problem-tile">
 			<p className="font-ui text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
-			<p className={cn("mt-1.5 text-3xl tabular-nums", tone === "amber" ? "text-amber-400" : tone === "green" ? "text-green-400" : "text-foreground")}>{value}</p>
+			<p className={cn("mt-1.5 text-3xl tabular-nums", tone === "amber" ? "text-warning" : tone === "green" ? "text-success" : "text-foreground")}>{value}</p>
 		</div>
 	);
 }
@@ -122,7 +122,7 @@ export function ProblemsPage() {
 										onClick={() => pickTab(id)}
 										className={cn(
 											"-mb-px cursor-pointer border-b-2 px-1 pb-2.5 font-ui text-sm uppercase tracking-widest transition-colors",
-											tab === id ? "border-green-500! font-semibold text-foreground" : "border-transparent! text-muted-foreground hover:text-foreground",
+											tab === id ? "border-success! font-semibold text-foreground" : "border-transparent! text-muted-foreground hover:text-foreground",
 										)}
 									>
 										{label}
@@ -173,7 +173,7 @@ function CategoryBar({ log, active, onPick, run, chats }: { log: ProblemLog; act
 							}}
 							className={cn(
 								"flex-auto cursor-pointer px-5 py-2 font-ui text-sm uppercase tracking-wider",
-								active === c.id ? "bg-amber-500 font-medium text-black" : "text-muted-foreground hover:text-foreground",
+								active === c.id ? "bg-warning font-medium text-black" : "text-muted-foreground hover:text-foreground",
 							)}
 						>
 							{c.label}
@@ -251,7 +251,7 @@ function CategoryMenu({ log, id, run, chats, onClose }: { log: ProblemLog; id: s
 							if (window.confirm(`Obrisati kategoriju „${cat.label}"? Njeni zadaci (${n}) prelaze u „${others.find((o) => o.id === moveTo)?.label}".`))
 								void run({ op: "delete-category", categoryId: id, moveTo });
 						}}
-						className={cn(BTN, "border-red-500/60! text-red-300")}
+						className={cn(BTN, "border-error/60! text-error")}
 					>
 						Obriši
 					</button>
@@ -265,7 +265,7 @@ function CategoryMenu({ log, id, run, chats, onClose }: { log: ProblemLog; id: s
 							<label key={c.id} className="flex cursor-pointer items-center gap-1.5 text-sm">
 								<input
 									type="checkbox"
-									className="accent-amber-500"
+									className="accent-warning"
 									checked={log.courseCategory[c.id] === id}
 									onChange={(e) => void run({ op: "course-category", chatId: c.id, categoryId: e.target.checked ? id : null })}
 								/>
@@ -376,7 +376,7 @@ function ProblemTable({ entries, log, now, run, onAttempt }: TableProps) {
 									<td className="px-4 py-3">{e.source}</td>
 									<td className="px-4 py-3">{e.branch ?? <span className="text-muted-foreground">—</span>}</td>
 									<td className="px-4 py-3">{last ? <OutcomePill outcome={last.outcome} minutes={last.minutes} /> : <span className="text-muted-foreground">nije rađen</span>}</td>
-									<td className={cn("whitespace-nowrap px-4 py-3", next.due ? "text-amber-400" : "text-foreground/85")}>{next.text}</td>
+									<td className={cn("whitespace-nowrap px-4 py-3", next.due ? "text-warning" : "text-foreground/85")}>{next.text}</td>
 									<td className="px-4 py-3 tabular-nums">{e.attempts.length}</td>
 									<td className="whitespace-nowrap px-4 py-3 text-right">
 										<button
@@ -485,7 +485,7 @@ function EntryEditor({ entry, log, run, onClose }: { entry: ProblemEntry; log: P
 						onClick={() => {
 							if (window.confirm(`Obrisati zadatak „${entry.reference}" i svih ${entry.attempts.length} pokušaja?`)) void run({ op: "delete", id: entry.id }).then((ok) => ok && onClose());
 						}}
-						className={cn(BTN, "border-red-500/60! text-red-300")}
+						className={cn(BTN, "border-error/60! text-error")}
 					>
 						Obriši zadatak
 					</button>
@@ -531,7 +531,7 @@ function EntryEditor({ entry, log, run, onClose }: { entry: ProblemEntry; log: P
 								onClick={() => {
 									if (window.confirm("Obrisati ovaj pokušaj?")) void run({ op: "delete-attempt", id: entry.id, attemptId: a.id });
 								}}
-								className="cursor-pointer rounded p-1 text-muted-foreground hover:text-red-300"
+								className="cursor-pointer rounded p-1 text-muted-foreground hover:text-error"
 							>
 								<XIcon className="size-4" />
 							</button>

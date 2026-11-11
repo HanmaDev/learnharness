@@ -79,7 +79,7 @@ export function PlacementDock({
 	const total = isTest ? test.topics.reduce((n, t) => n + t.questions.length, 0) : 0;
 	return (
 		<div className="flex items-center gap-4 px-4 py-3" data-testid="placement-dock">
-			<ClipboardCheckIcon className="size-5 shrink-0 text-green-400" aria-hidden />
+			<ClipboardCheckIcon className="size-5 shrink-0 text-success" aria-hidden />
 			<div className="min-w-0 flex-1">
 				<p className="font-ui text-xs uppercase tracking-widest text-muted-foreground">{isTest ? "Test znanja" : "Rezultat testa"}</p>
 				<p className="truncate text-sm text-foreground">
@@ -116,7 +116,7 @@ export function PlacementDock({
 				type="button"
 				data-testid="placement-open"
 				onClick={() => setOpen(true)}
-				className="shrink-0 cursor-pointer rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
+				className="shrink-0 cursor-pointer rounded-md bg-success px-4 py-2 text-sm font-medium text-white hover:bg-success"
 			>
 				{isTest ? "Otvori test" : "Otvori rezultat"}
 			</button>
@@ -239,10 +239,10 @@ function PlacementTestPage({ test, toolCallId, onClose, onSubmit }: { test: Plac
 																onClick={() => set(q.id, { value: multi ? (on ? chosen.filter((v) => v !== o.value) : [...chosen, o.value]) : [o.value] })}
 																className={cn(
 																	"flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-left text-base transition-colors disabled:cursor-default",
-																	on ? "border-green-500! bg-green-500/10" : "border-border hover:bg-accent",
+																	on ? "border-success! bg-success/10" : "border-border hover:bg-accent",
 																)}
 															>
-																<span className={cn("size-3.5 shrink-0 border border-muted-foreground", multi ? "rounded-sm" : "rounded-full", on && "border-green-400! bg-green-400")} />
+																<span className={cn("size-3.5 shrink-0 border border-muted-foreground", multi ? "rounded-sm" : "rounded-full", on && "border-success! bg-success")} />
 																<Md>{o.label}</Md>
 															</button>
 														);
@@ -277,13 +277,13 @@ function PlacementTestPage({ test, toolCallId, onClose, onSubmit }: { test: Plac
 				</div>
 			</div>
 			<div className="flex items-center justify-end gap-4 border-t border-border px-8 py-4">
-				{confirmEmpty && answered < all.length && <span className="text-sm text-amber-400">{all.length - answered} pitanja bez odgovora računaju se kao „ne znam”. Klikni ponovo da predaš.</span>}
+				{confirmEmpty && answered < all.length && <span className="text-sm text-warning">{all.length - answered} pitanja bez odgovora računaju se kao „ne znam”. Klikni ponovo da predaš.</span>}
 				<button
 					type="button"
 					data-testid="placement-submit"
 					disabled={grading}
 					onClick={() => void submit()}
-					className="flex cursor-pointer items-center gap-2 rounded-md bg-green-600 px-5 py-2.5 text-base font-medium text-white hover:bg-green-500 disabled:cursor-wait disabled:opacity-60"
+					className="flex cursor-pointer items-center gap-2 rounded-md bg-success px-5 py-2.5 text-base font-medium text-white hover:bg-success disabled:cursor-wait disabled:opacity-60"
 				>
 					{grading && <BrailleSpinner label="Ocenjujem" />} Predaj test
 				</button>
@@ -320,7 +320,7 @@ function PlacementResultPage({ result, onClose, onSubmit }: { result: PlacementR
 									</div>
 									<div className="flex w-44 items-center gap-2">
 										<span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-											<span className={cn("block h-full rounded-full", t.score >= 80 ? "bg-green-500" : t.score >= 50 ? "bg-amber-500" : "bg-red-500")} style={{ width: `${Math.round(t.score)}%` }} />
+											<span className={cn("block h-full rounded-full", t.score >= 80 ? "bg-success" : t.score >= 50 ? "bg-warning" : "bg-error")} style={{ width: `${Math.round(t.score)}%` }} />
 										</span>
 										<span className="w-10 text-right font-ui text-sm text-foreground">{Math.round(t.score)}%</span>
 									</div>
@@ -332,7 +332,7 @@ function PlacementResultPage({ result, onClose, onSubmit }: { result: PlacementR
 												onClick={() => setDecisions((x) => ({ ...x, [t.id]: d }))}
 												className={cn(
 													"cursor-pointer rounded px-3 py-1 font-ui text-xs uppercase tracking-wider",
-													decisions[t.id] === d ? (d === "znam" ? "bg-green-600 text-white" : d === "ponoviti" ? "bg-amber-500 text-black" : "bg-red-500/80 text-white") : "text-muted-foreground hover:text-foreground",
+													decisions[t.id] === d ? (d === "znam" ? "bg-success text-white" : d === "ponoviti" ? "bg-warning text-black" : "bg-error/80 text-white") : "text-muted-foreground hover:text-foreground",
 												)}
 											>
 												{PLACEMENT_DECISION_LABELS[d]}
@@ -351,7 +351,7 @@ function PlacementResultPage({ result, onClose, onSubmit }: { result: PlacementR
 					type="button"
 					data-testid="placement-confirm"
 					onClick={() => onSubmit(askAnswer("Rezultat testa", placementDecisionText(result, decisions)))}
-					className="cursor-pointer rounded-md bg-green-600 px-5 py-2.5 text-base font-medium text-white hover:bg-green-500"
+					className="cursor-pointer rounded-md bg-success px-5 py-2.5 text-base font-medium text-white hover:bg-success"
 				>
 					Potvrdi i napravi plan
 				</button>
@@ -380,7 +380,7 @@ export function PlacementSummary({ tool, output }: { tool: string; output: unkno
 	}
 	return (
 		<div className="my-2 flex items-center gap-2 rounded-md border border-border px-3 py-2 font-ui text-xs uppercase tracking-wider text-muted-foreground" data-testid="placement-summary">
-			<ClipboardCheckIcon className="size-4 text-green-400" aria-hidden /> {line}
+			<ClipboardCheckIcon className="size-4 text-success" aria-hidden /> {line}
 		</div>
 	);
 }

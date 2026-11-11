@@ -42,14 +42,14 @@ const problemAck = (id: string): LhMessage =>
 
 describe("photos — record and model path", () => {
 	it("thinking input accepts photo ids (text optional) and rejects bad ids", () => {
-		assert.deepEqual(parseChatInput({ type: "thinking", problemCallId: "p", text: "", images: [ID] }), { type: "thinking", problemCallId: "p", text: "", images: [ID] });
-		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p", text: "x", images: ["nope"] }), ChatInputError);
-		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p", text: "", images: [] }), ChatInputError, "nothing to submit");
+		assert.deepEqual(parseChatInput({ type: "thinking", problemCallId: "p", text: "", photos: [ID] }), { type: "thinking", problemCallId: "p", text: "", photos: [ID] });
+		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p", text: "x", photos: ["nope"] }), ChatInputError);
+		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p", text: "", photos: [] }), ChatInputError, "nothing to submit");
 	});
 
 	it("the record keeps ids only; the agent's hydrated copy sends the image to the model", () => {
 		const record = { messages: [problemCall("p1"), problemAck("p1")], imageSnapshots: { [ID]: snap } };
-		const [marker] = inputAppends(record, { type: "thinking", problemCallId: "p1", text: "my work", images: [ID] });
+		const [marker] = inputAppends(record, { type: "thinking", problemCallId: "p1", text: "my work", photos: [ID] });
 		const details = (marker as { details: { images: Array<{ snapshotId: string; data?: string }> } }).details;
 		assert.deepEqual(details.images, [{ snapshotId: ID }], "no bytes in the record (review fix)");
 		const [hydrated] = hydratePhotos([marker!], record.imageSnapshots);
@@ -60,7 +60,7 @@ describe("photos — record and model path", () => {
 
 	it("a photo id the record doesn't hold is refused (attach again)", () => {
 		const record = { messages: [problemCall("p1"), problemAck("p1")], imageSnapshots: {} };
-		assert.throws(() => inputAppends(record, { type: "thinking", problemCallId: "p1", text: "x", images: [ID] }), /attach it again/);
+		assert.throws(() => inputAppends(record, { type: "thinking", problemCallId: "p1", text: "x", photos: [ID] }), /attach it again/);
 	});
 
 	it("answer photos: ids in the record, image content only in the hydrated agent copy", () => {
@@ -68,7 +68,7 @@ describe("photos — record and model path", () => {
 			id: "a_q", role: "assistant", stopReason: "toolUse", timestamp: 1,
 			content: [{ type: "toolCall", id: "q", name: "ask_user_question", arguments: { question: "Show your work" } }],
 		} as unknown as LhMessage;
-		const answer = { kind: "ask" as const, questionText: "Show your work", dontKnow: false, answers: [], text: "see photo", images: [ID], answeredAt: "t" };
+		const answer = { kind: "ask" as const, questionText: "Show your work", dontKnow: false, answers: [], text: "see photo", photos: [ID], answeredAt: "t" };
 		const [result] = inputAppends({ messages: [quiz], imageSnapshots: { [ID]: snap } }, { type: "answer", toolCallId: "q", answer });
 		const stored = (result as { content: Array<{ type: string; text?: string }> }).content;
 		assert.ok(!stored.some((c) => c.type === "image"), "no bytes in the record");
@@ -77,6 +77,26 @@ describe("photos — record and model path", () => {
 		assert.ok(content.some((c) => c.type === "image"));
 		assert.equal(JSON.parse(content[0]!.text!).photosAttached, 1);
 		assert.equal(compactAnswerForModel(answer).photosAttached, 1);
+	});
+
+	it("answers saved before v0.6.0 (photo ids under `images`) still reach the model", () => {
+		const legacy = {
+			id: "r_old", role: "toolResult", toolCallId: "q", toolName: "ask_user_question", isError: false, timestamp: 1,
+			content: [{ type: "text", text: "{}" }],
+			details: { kind: "ask", questionText: "Q", dontKnow: false, answers: [], text: "", images: [ID], answeredAt: "t" },
+		} as unknown as LhMessage;
+		const [hydrated] = hydratePhotos([legacy], { [ID]: snap });
+		assert.ok((hydrated as { content: Array<{ type: string }> }).content.some((c) => c.type === "image"));
+	});
+
+	it("thinking may carry v0.6.0 inline images and fork photos together", () => {
+		const inline = { type: "image" as const, data: "aW5saW5l", mimeType: "image/png" };
+		const marker = newThinkingMessage("p1", "both", [inline, { snapshotId: ID }]);
+		assert.match(String(marker.content), /1 photo of handwritten work attached/, "the note counts fork photos only");
+		const [hydrated] = hydratePhotos([marker], { [ID]: snap });
+		const wire = toLlmMessages([hydrated] as never) as Array<{ content: Array<{ type: string; data?: string }> }>;
+		const datas = wire.at(-1)!.content.filter((c) => c.type === "image").map((c) => c.data);
+		assert.deepEqual(datas, [inline.data, snap.data]);
 	});
 
 	it("the client's optimistic marker holds ids only", () => {

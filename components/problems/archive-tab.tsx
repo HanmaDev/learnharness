@@ -55,7 +55,7 @@ function loadFilters(): Filters {
 }
 
 type Status = "solved" | "again" | "none";
-const DOT: Record<Status, string> = { solved: "bg-green-500", again: "bg-amber-500", none: "bg-zinc-500" };
+const DOT: Record<Status, string> = { solved: "bg-success", again: "bg-warning", none: "bg-zinc-500" };
 
 function statusOf(e: ProblemEntry | undefined): Status {
 	if (!e) return "none";
@@ -263,7 +263,7 @@ function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: Probl
 				<button
 					type="button"
 					onClick={() => onAttempt({ fixed: !!entry, source: entry?.source ?? "DMS arhiva", reference: entry?.reference ?? p.title, branch: logBranch(p.branch), trackerId: p.id, category: "takmicenja" })}
-					className={cn(BTN, "border-green-500! bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-500")}
+					className={cn(BTN, "border-success! bg-success py-2.5 text-sm font-semibold text-white hover:bg-success")}
 					data-testid="archive-attempt"
 				>
 					Zabeleži pokušaj

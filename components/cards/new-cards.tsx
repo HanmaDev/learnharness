@@ -99,7 +99,7 @@ export function NewCardsDialog({ chatId, view, onClose }: { chatId: string; view
 									))}
 								</select>
 							</label>
-							{error && <p className="text-sm text-red-400">{error}</p>}
+							{error && <p className="text-sm text-error">{error}</p>}
 							<p className="text-xs text-muted-foreground">Pitanja pravi isti model kao nastavnik. Prvo ih pregledaš, pa tek onda ulaze u špil.</p>
 						</div>
 					)}
@@ -121,7 +121,7 @@ export function NewCardsDialog({ chatId, view, onClose }: { chatId: string; view
 									</span>
 								</label>
 							))}
-							{error && <p className="text-sm text-red-400">{error}</p>}
+							{error && <p className="text-sm text-error">{error}</p>}
 						</div>
 					)}
 				</div>

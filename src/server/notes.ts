@@ -12,7 +12,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
 import { runSubagent } from "../agent/subagents/pi-run.ts";
-import { withBgLlmSlot } from "../agent/subagents/bg-llm-semaphore.ts";
 import {
 	deriveDoneNodes,
 	demoteHeadings,
@@ -142,9 +141,8 @@ async function writeStep(chatId: string, stepId: string): Promise<void> {
 	const engine = resolveEngine("teacher");
 	if (!engine) throw new Error("Nije podešen model (Settings → Providers).");
 	const needTitle = !chat.notes?.courseTitle;
-	const { text } = await withBgLlmSlot(undefined, () =>
-		runSubagent([], { role: "teacher", engine, systemPrompt: WRITER_SYSTEM, prompt: writerPrompt(chat, step, transcript, needTitle, questionKeys(slice).slice(0, 20_000)), maxTurns: 1, chatId }),
-	);
+	// Background admission happens inside runSubagent (v0.6.0).
+	const { text } = await runSubagent([], { role: "teacher", engine, systemPrompt: WRITER_SYSTEM, prompt: writerPrompt(chat, step, transcript, needTitle, questionKeys(slice).slice(0, 20_000)), maxTurns: 1, chatId });
 	let body = text.trim();
 	let title: string | undefined;
 	const m = /^\s*Naziv kursa:\s*(.+)\n/i.exec(body);

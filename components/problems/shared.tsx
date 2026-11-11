@@ -11,7 +11,7 @@ import { BRANCHES, OUTCOME_LABELS, OUTCOMES, localDate, resolveDate, type Outcom
 
 export const BTN =
 	"cursor-pointer rounded-md border border-border px-3 py-1.5 font-ui text-xs uppercase tracking-wider text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-50";
-export const INPUT = "h-9 rounded-md border border-border bg-background px-3 text-base text-foreground outline-none focus:border-amber-500!";
+export const INPUT = "h-9 rounded-md border border-border bg-background px-3 text-base text-foreground outline-none focus:border-warning!";
 
 export function useProblemLog() {
 	return useLiveJson<ProblemLog>("/api/problems", { chatId: "problems", debounceMs: 300 });
@@ -26,11 +26,11 @@ export async function problemAction(body: Record<string, unknown>): Promise<Prob
 }
 
 const PILL: Record<Outcome, string> = {
-	clean: "border-green-500/60! bg-green-500/10 text-green-300",
-	slow: "border-green-500/60! bg-green-500/10 text-green-300",
-	hint: "border-amber-500/60! bg-amber-500/10 text-amber-300",
-	read: "border-red-500/60! bg-red-500/10 text-red-300",
-	unsolved: "border-red-500/60! bg-red-500/10 text-red-300",
+	clean: "border-success/60! bg-success/10 text-success",
+	slow: "border-success/60! bg-success/10 text-success",
+	hint: "border-warning/60! bg-warning/10 text-warning",
+	read: "border-error/60! bg-error/10 text-error",
+	unsolved: "border-error/60! bg-error/10 text-error",
 };
 
 export function OutcomePill({ outcome, minutes }: { outcome: Outcome; minutes?: number }) {
@@ -198,12 +198,12 @@ export function AttemptDialog({ seed, log, onClose, onSaved }: { seed: DialogSee
 						<input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ključna ideja ili gde je zapelo" className={INPUT} />
 					</label>
 				</div>
-				{error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+				{error && <p className="mt-3 text-sm text-error">{error}</p>}
 				<div className="mt-5 flex justify-end gap-2">
 					<button type="button" onClick={onClose} className={BTN}>
 						Otkaži
 					</button>
-					<button type="button" onClick={() => void save()} disabled={!ok} className={cn(BTN, "border-amber-500! bg-amber-500 font-medium text-black hover:bg-amber-400")} data-testid="attempt-save">
+					<button type="button" onClick={() => void save()} disabled={!ok} className={cn(BTN, "border-warning! bg-warning font-medium text-black hover:bg-warning")} data-testid="attempt-save">
 						Sačuvaj
 					</button>
 				</div>

@@ -18,7 +18,7 @@ export function ForecastChart({ days, now }: { days: readonly number[]; now: num
 					<div key={i} className="flex h-full flex-1 flex-col items-center justify-end gap-1" title={`${n}`}>
 						{n > 0 && <span className="font-ui text-[10px] text-muted-foreground">{n}</span>}
 						<div
-							className={i === 0 ? "w-full rounded-t-sm bg-amber-500" : "w-full rounded-t-sm bg-muted-foreground/40"}
+							className={i === 0 ? "w-full rounded-t-sm bg-warning" : "w-full rounded-t-sm bg-muted-foreground/40"}
 							style={{ height: `${n === 0 ? 0 : Math.max(4, (n / max) * 100)}%` }}
 						/>
 					</div>
@@ -43,7 +43,7 @@ export function ForecastSummary({ days, untilExam }: { days: readonly number[]; 
 	const [today, ...rest] = forecastSummary(days, untilExam).split(" · ");
 	return (
 		<p className="mt-5 text-xl" data-testid="forecast-summary">
-			<span className="font-semibold text-amber-400">{today}</span>
+			<span className="font-semibold text-warning">{today}</span>
 			{rest.map((r) => ` · ${r}`).join("")}
 		</p>
 	);

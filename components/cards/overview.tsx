@@ -56,14 +56,14 @@ export function CardsOverviewView() {
 										<p className="truncate text-3xl leading-tight text-foreground">{courseName(d.title)}</p>
 										<p className="mt-1.5 text-xl text-foreground/80">
 											{d.due} za danas · {d.fresh} {d.fresh === 1 ? "nova" : "novih"} · {d.total} ukupno
-											{d.examDate && <span className="text-amber-400"> · ispit {examLabel(d.examDate)}</span>}
+											{d.examDate && <span className="text-warning"> · ispit {examLabel(d.examDate)}</span>}
 										</p>
 									</div>
 									<Link
 										href={`/cards/${encodeURIComponent(d.chatId)}`}
 										className={
 											on
-												? "min-w-[136px] rounded-md bg-green-600 px-5 py-2.5 text-center text-xl font-medium text-white hover:bg-green-500"
+												? "min-w-[136px] rounded-md bg-success px-5 py-2.5 text-center text-xl font-medium text-white hover:bg-success"
 												: "min-w-[136px] rounded-md border border-border px-5 py-2.5 text-center text-xl text-muted-foreground hover:text-foreground"
 										}
 									>
@@ -95,7 +95,7 @@ export function CardsOverviewView() {
 								<Toggle checked={data.globalEnabled} label="kartice uključene" onChange={(v) => void save({ enabled: v })} />
 								Kartice {data.globalEnabled ? "uključene" : "isključene"}
 							</span>
-							{saveError && <span className="text-red-400 normal-case">Čuvanje nije uspelo.</span>}
+							{saveError && <span className="text-error normal-case">Čuvanje nije uspelo.</span>}
 							<NumberSetting label="Nove kartice dnevno" value={data.settings.newPerDay} onCommit={(v) => void save({ newPerDay: Math.min(500, Math.max(0, v)) })} />
 							<NumberSetting
 								label="Najviše ponavljanja dnevno"

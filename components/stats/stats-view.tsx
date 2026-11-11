@@ -34,7 +34,7 @@ function Tile({ label, value, sub, accent }: { label: string; value: string; sub
 	return (
 		<div className="rounded-lg border border-border bg-white/[0.035] px-5 py-4" data-testid="stat-tile">
 			<p className="font-ui text-xs uppercase tracking-widest text-muted-foreground">{label}</p>
-			<p className={cn("mt-1.5 text-3xl", accent ? "text-amber-400" : "text-foreground")}>{value}</p>
+			<p className={cn("mt-1.5 text-3xl", accent ? "text-warning" : "text-foreground")}>{value}</p>
 			{sub && <p className="mt-0.5 text-base text-muted-foreground">{sub}</p>}
 		</div>
 	);
@@ -64,7 +64,7 @@ export function StatsPage() {
 									onClick={() => setRange(id)}
 									className={cn(
 										"cursor-pointer rounded px-4 py-1.5 font-ui text-sm uppercase tracking-wider",
-										range === id ? "bg-amber-500 font-medium text-black" : "text-muted-foreground hover:text-foreground",
+										range === id ? "bg-warning font-medium text-black" : "text-muted-foreground hover:text-foreground",
 									)}
 								>
 									{label}
@@ -105,7 +105,7 @@ export function StatsPage() {
 
 							<YearGrid cells={data.year} />
 							<p className="mt-4 text-lg text-foreground/85" data-testid="streak-summary">
-								Trenutni niz: <b className="font-semibold text-amber-400">{data.streaks.current} {daysWord(data.streaks.current)}</b> · Najduži niz: {data.streaks.longest}{" "}
+								Trenutni niz: <b className="font-semibold text-warning">{data.streaks.current} {daysWord(data.streaks.current)}</b> · Najduži niz: {data.streaks.longest}{" "}
 								{daysWord(data.streaks.longest)} · Ukupno: {data.streaks.activeDays} {daysWord(data.streaks.activeDays)} učenja
 							</p>
 							<p className="mt-2 text-sm text-muted-foreground">Vreme učenja se meri dok je prozor aktivan i nešto radiš (od 8. novembra 2026); ostalo je iz tvojih odgovora, koraka i kartica.</p>
@@ -148,7 +148,7 @@ function DailyBars({ days }: { days: StatsView["last30"] }) {
 							const h = mins[i] === 0 ? (s.questions || s.reviews ? 2 : 0) : Math.max(2, (mins[i]! / max) * 100);
 							return (
 								<div key={d.date} className="flex h-full flex-1 flex-col items-center justify-end" title={tip}>
-									<div className={cn("w-full rounded-t-sm", i === days.length - 1 ? "bg-amber-500" : mins[i] === 0 ? "bg-green-500/30" : "bg-green-500")} style={{ height: `${h}%` }} />
+									<div className={cn("w-full rounded-t-sm", i === days.length - 1 ? "bg-warning" : mins[i] === 0 ? "bg-success/30" : "bg-success")} style={{ height: `${h}%` }} />
 								</div>
 							);
 						})}
@@ -167,10 +167,10 @@ function DailyBars({ days }: { days: StatsView["last30"] }) {
 }
 
 function shade(c: StatsView["year"][number]) {
-	if (c.minutes >= 90) return "bg-green-400";
-	if (c.minutes >= 45) return "bg-green-500/80";
-	if (c.minutes >= 15) return "bg-green-600/60";
-	if (c.minutes > 0 || c.active) return "bg-green-700/45";
+	if (c.minutes >= 90) return "bg-success";
+	if (c.minutes >= 45) return "bg-success/80";
+	if (c.minutes >= 15) return "bg-success/60";
+	if (c.minutes > 0 || c.active) return "bg-success/45";
 	return "bg-white/15";
 }
 
@@ -201,7 +201,7 @@ function YearGrid({ cells }: { cells: StatsView["year"] }) {
 							<span
 								key={c.date}
 								title={`${c.date}: ${c.minutes} min`}
-								className={cn("aspect-square w-full rounded-[2px]", shade(c), c.date === today && "ring-1 ring-amber-400")}
+								className={cn("aspect-square w-full rounded-[2px]", shade(c), c.date === today && "ring-1 ring-warning")}
 							/>
 						))}
 					</div>
@@ -209,7 +209,7 @@ function YearGrid({ cells }: { cells: StatsView["year"] }) {
 			</div>
 			<div className="mt-3 flex items-center justify-end gap-1.5 font-ui text-xs text-muted-foreground">
 				Manje
-				{["bg-white/15", "bg-green-700/45", "bg-green-600/60", "bg-green-500/80", "bg-green-400"].map((c) => (
+				{["bg-white/15", "bg-success/45", "bg-success/60", "bg-success/80", "bg-success"].map((c) => (
 					<span key={c} className={cn("size-[11px] rounded-[2px]", c)} />
 				))}
 				Više

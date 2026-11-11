@@ -6,7 +6,6 @@
  */
 import { Type, type Static } from "typebox";
 import { runSubmitAgent } from "../agent/subagents/submit-agent.ts";
-import { withBgLlmSlot } from "../agent/subagents/bg-llm-semaphore.ts";
 import {
 	emit,
 	mistakeViews,
@@ -103,8 +102,8 @@ async function analyseRounds(chatId: string): Promise<void> {
 			const ids = new Set(todo.map((w) => w.callId));
 			let out: AnalysisSubmit;
 			try {
-				out = await withBgLlmSlot(undefined, () =>
-					runSubmitAgent<AnalysisSubmit>({
+				// Background admission happens inside runSubagent (v0.6.0).
+				out = await runSubmitAgent<AnalysisSubmit>({
 						role: "extractor",
 						chatId,
 						toolName: "submit_mistakes",
@@ -118,8 +117,7 @@ async function analyseRounds(chatId: string): Promise<void> {
 						onStep: () => {},
 						neverSubmitted: "the mistake analyser never submitted",
 						validate: (v) => (v.mistakes.every((m) => ids.has(m.id)) ? null : "use exactly the mistake ids you were given"),
-					}),
-				);
+					});
 			} catch (e) {
 				console.warn(`[mistakes] ${chatId}: ${e instanceof Error ? e.message : e}`);
 				stores.chatStore.updateMistakes(chatId, (ms) => {

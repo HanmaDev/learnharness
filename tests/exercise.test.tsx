@@ -2,6 +2,7 @@
  * Fork (2026-11-07): the `exercise` tool (blanks / order / find-mistake /
  * match) and the practice upgrades (hint button, parts, timer).
  */
+import { InteractionLayersProvider } from "../components/interaction-layers.tsx";
 import React from "react";
 (globalThis as Record<string, unknown>).React = React;
 
@@ -247,10 +248,11 @@ describe("practice upgrades", () => {
 	});
 
 	it("the cards show parts, the limit, per-part outcomes and time", () => {
-		const problem = renderToStaticMarkup(<ProblemCard part={{ type: "tool-problem", state: "output-available", toolCallId: "p", input: { statement: "S", parts: [{ label: "a", statement: "A?" }], timeLimitMin: 15 } }} />);
+		// v0.6.0: practice cards render inside the app's interaction layers.
+		const problem = renderToStaticMarkup(<InteractionLayersProvider><ProblemCard part={{ type: "tool-problem", state: "output-available", toolCallId: "p", input: { statement: "S", parts: [{ label: "a", statement: "A?" }], timeLimitMin: 15 } }} /></InteractionLayersProvider>);
 		assert.match(problem, /15 min/);
 		assert.match(problem, /\(a\)/);
-		const conclude = renderToStaticMarkup(<ConcludeCard part={{ type: "tool-conclude", state: "output-available", toolCallId: "c", input: { outcome: "solved", verdict: "v", parts: [{ label: "a", outcome: "solved" }, { label: "b", outcome: "partial" }], timeSpentMin: 14 }, reveal: "sol" }} />);
+		const conclude = renderToStaticMarkup(<InteractionLayersProvider><ConcludeCard part={{ type: "tool-conclude", state: "output-available", toolCallId: "c", input: { outcome: "solved", verdict: "v", parts: [{ label: "a", outcome: "solved" }, { label: "b", outcome: "partial" }], timeSpentMin: 14 }, reveal: "sol" }} /></InteractionLayersProvider>);
 		assert.match(conclude, /data-testid="conclude-parts"/);
 		assert.match(conclude, /\(b\) partial/);
 		assert.match(conclude, /14 min/);

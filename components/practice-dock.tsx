@@ -1,16 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import type { ViewReaderRef } from "./session-view-readers";
 import { ChevronRightIcon, LightbulbIcon, TimerIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
+import { useOptionalInteractionLayers } from "./interaction-layers";
+import { isInteractionScopeEligible } from "./plugin-input-focus";
 import { PathInput } from "@/components/path-input";
 import { useDictationGhost } from "@/components/dictation-state";
 import { PhotoTray, usePhotoAttachments } from "@/components/photo-attach";
 import { MathField } from "@/components/math-field";
 import { mathEquivalent } from "@/components/math-check";
+import type { PrepareThinkingSubmission } from "./plugin-submission-adapters";
 import { cn } from "@/lib/utils";
 
 /**
@@ -34,6 +38,7 @@ import { cn } from "@/lib/utils";
  */
 
 export interface PracticeDockProps {
+	viewReader?: ViewReaderRef<string>;
 	/** The active problem's tool-call id (submissions target it). */
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
@@ -47,8 +52,19 @@ export interface PracticeDockProps {
 	expanded: boolean;
 	onExpand: () => void;
 	/** text — POST {type:"thinking"} (one lane; the register is read from the text).
-	 *  Fork: `images` = snapshot ids of attached photos of handwritten work. */
-	onSubmit: (text: string, images?: string[]) => void;
+	 *  Fork: `photos` = snapshot ids of attached photos of handwritten work. */
+	onSubmit: (text: string, photos?: string[]) => void;
+	onPrepareSubmission?: PrepareThinkingSubmission;
+	/** Host-owned alternative editor. The native statement/thinking/controls stay shared. */
+	customInput?: {
+		editor: ReactNode;
+		thinking: string;
+		onThinkingChange(value: string): void;
+		ready: boolean;
+		prepare: PrepareThinkingSubmission;
+	};
+	hasPendingInput?: boolean;
+	preparing?: boolean;
 	/** Escape in the thinking field stops dictation (threaded from the page). */
 	onEscape?: () => void;
 	/** Compaction is running for this chat (owner round 14): the thinking
@@ -74,8 +90,13 @@ export function formatClock(ms: number): string {
 	return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
-	const [thinking, setThinking] = useState("");
+export function PracticeDock({ viewReader, problemCallId, input, posedAt, hintsUsed = 0, expanded, onExpand, onSubmit, onPrepareSubmission, customInput, hasPendingInput = false, preparing = false, onEscape, compactionRunning = false }: PracticeDockProps) {
+	const controller = useOptionalInteractionLayers();
+	const rootRef = useRef<HTMLElement>(null);
+	const [nativeThinking, setNativeThinking] = useState("");
+	const custom = useRef(customInput); custom.current = customInput;
+	const thinking = customInput ? customInput.thinking : nativeThinking;
+	const setThinking = (value: string) => { if (custom.current) custom.current.onThinkingChange(value); else setNativeThinking(value); };
 	// Fork: the part being answered, and the timer (teacher limit, or the learner's own).
 	const parts = input.parts && input.parts.length > 1 ? input.parts : null;
 	const [partIdx, setPartIdx] = useState(0);
@@ -99,22 +120,41 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
-	const thinkingRef = useRef("");
+	const thinkingRef = useRef(thinking); thinkingRef.current = thinking;
+	const editRevision = useRef(0);
+	useLayoutEffect(() => {
+		if (!viewReader) return;
+		const read = () => thinkingRef.current;
+		viewReader.current = read;
+		return () => { if (viewReader.current === read) viewReader.current = null; };
+	}, [viewReader]);
 
 	const dictationAppend = useCallback(
 		(t: string) => {
 			const v = joinDictation(thinkingRef.current, t);
-			thinkingRef.current = v;
+			thinkingRef.current = v; editRevision.current++;
 			setThinking(v);
 		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- setThinking reads the custom-input ref
 		[],
 	);
 	useDictationTarget(dictationAppend, true);
 	// Fork: the live (greyed) dictation words.
 	const dictationGhost = useDictationGhost(dictationAppend);
 
+	useLayoutEffect(() => { viewReader?.changed?.(); }, [viewReader, thinking]);
 	const submit = async () => {
-		if (compactionRunning || submittingRef.current) return;
+		if (compactionRunning || preparing || submittingRef.current) return;
+		// v0.6.0: a plugin's editor (or a prepared submission) owns sending.
+		const prepare = customInput?.prepare ?? onPrepareSubmission;
+		if (prepare) {
+			if (customInput ? !customInput.ready : (!thinkingRef.current.trim() && !hasPendingInput)) return;
+			let capturedRevision = editRevision.current;
+			prepare(() => { capturedRevision = editRevision.current; return customInput ? thinkingRef.current : thinkingRef.current.trim(); }, captured => {
+				if (editRevision.current === capturedRevision && (customInput ? thinkingRef.current : thinkingRef.current.trim()) === captured) { thinkingRef.current = ""; setThinking(""); }
+			});
+			return;
+		}
 		const text = thinkingRef.current.trim();
 		const images = photos.ids;
 		const final = finalRef.current.trim();
@@ -155,12 +195,12 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 	 * means the field is often never focused — the window-level Enter
 	 * (typing surfaces and buttons excluded) submits the trace. Mounted
 	 * while the dock is — collapsed bar included (the trace survives). */
-	useEnterSubmits(() => void submit());
+	useEnterSubmits(() => void submit(), rootRef);
 
 	/* ── the collapsed bar ── */
-	if (!expanded) {
-		return (
+	const bar = (
 			<button
+				ref={element => { if (!customInput) rootRef.current = element; }}
 				type="button"
 				data-testid="practice-dock-bar"
 				onClick={onExpand}
@@ -171,11 +211,13 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 				<span className="min-w-0 flex-1 truncate">{input.statement}</span>
 			</button>
 		);
-	}
+	if (!expanded && !customInput) return bar;
 
 	/* ── the expanded form ── */
 	return (
-		<div data-testid="practice-dock" data-problem={problemCallId}>
+		<div ref={element => { rootRef.current = element; }} data-testid="practice-dock" data-problem={problemCallId}>
+			{!expanded && bar}
+			<div hidden={!expanded}>
 			{/* The agent's half: the 'Problem' eyebrow (mirroring the quiz
 			    cards' label row — owner round, 2026-10-05) + the statement,
 			    markdown + LaTeX rendered, capped by the measured column
@@ -235,8 +277,8 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 						data-testid="practice-clock"
 						className={cn(
 							"font-mono tabular-nums",
-							remaining !== null && remaining <= 60_000 && remaining > 0 && "text-amber-500",
-							remaining !== null && remaining <= 0 && "text-red-500",
+							remaining !== null && remaining <= 60_000 && remaining > 0 && "text-warning",
+							remaining !== null && remaining <= 0 && "text-error",
 						)}
 					>
 						{remaining === null ? formatClock(elapsed) : remaining > 0 ? `${formatClock(remaining)} left` : `time's up (+${formatClock(-remaining)})`}
@@ -269,6 +311,8 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 					))}
 			</div>
 
+			{customInput?.editor}
+
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
 			    Shift+Enter makes a newline — less to decide about. */}
 			<div
@@ -283,13 +327,15 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 					value={thinking}
 					ghostText={dictationGhost}
 					onValueChange={(value) => {
-						thinkingRef.current = value;
+						thinkingRef.current = value; editRevision.current++;
 						setThinking(value);
 					}}
 					onKeyDown={(e) => {
+						if (!isInteractionScopeEligible(e.currentTarget, controller)) return;
 						// Esc ends dictation — stopPropagation claims it (the
 						// keyboard machine) so the window chain doesn't also fire.
 						if (e.key === "Escape" && onEscape) {
+							controller?.claimEscape(e);
 							e.preventDefault();
 							e.stopPropagation();
 							onEscape();
@@ -334,13 +380,14 @@ export function PracticeDock({ problemCallId, input, posedAt, hintsUsed = 0, exp
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={(thinking.trim().length === 0 && photos.ids.length === 0 && finalAnswer.trim().length === 0) || photos.uploading || compactionRunning}
+						disabled={(customInput ? !customInput.ready : (thinking.trim().length === 0 && photos.ids.length === 0 && finalAnswer.trim().length === 0 && !hasPendingInput)) || photos.uploading || compactionRunning || preparing}
 						onClick={() => submit()}
 						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
 					>
-						Submit thinking
+						{customInput ? "Submit" : "Submit thinking"}
 					</Button>
 				</div>
+			</div>
 			</div>
 		</div>
 	);

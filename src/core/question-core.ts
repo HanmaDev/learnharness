@@ -20,6 +20,8 @@
 import type { ExerciseAnswer } from "./exercise.ts";
 import { Type, type Static } from "typebox";
 import { stripModelValueDebris } from "./value-debris.ts";
+import { expandCitationsForModel } from "./citations.ts";
+import type { PluginSubmissionImages } from "./plugin-submissions.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
 
@@ -469,6 +471,8 @@ export interface QuestionAnswerData {
 	 *  2026-10-03) — a separate channel from `thinking`, captured by the
 	 *  reading field and riding the check answer. Absent when empty. */
 	readingThinking?: string;
+	/** Host-owned explicit image channels; never inferred from text or paths. */
+	images?: PluginSubmissionImages;
 	confidence?: number; // quiz only: the learner's stated probability (0-100, raw) that his selected answer is correct — never sent on "I don't know" (owner, 2026-10-01)
 	correct?: boolean; // quiz only
 	correctIndices?: number[]; // quiz only (rendering)
@@ -480,8 +484,9 @@ export interface QuestionAnswerData {
 	setAside?: boolean;
 	/** Fork: the exercise format's response + grading (kind "exercise"). */
 	exercise?: ExerciseAnswer;
-	/** Fork: snapshot ids of photos the learner attached to this answer. */
-	images?: string[];
+	/** Fork: snapshot ids of photos the learner attached to this answer
+	 *  (records before v0.6.0 kept them in `images` as a plain list). */
+	photos?: string[];
 	answeredAt: string;
 }
 
@@ -808,8 +813,8 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	// fixtures, foreign records) — degrade to omission, never crash.
 	if (Array.isArray(ad.answers) && ad.answers.length > 0)
 		out.answers = ad.answers.map((a) => ({ index: a.index, label: a.label }));
-	if (ad.text) out.text = ad.text;
-	if (ad.other) out.other = ad.other;
+	if (ad.text) out.text = expandCitationsForModel(ad.text);
+	if (ad.other) out.other = expandCitationsForModel(ad.other);
 	// The verdict + stated confidence are the learner's PERFORMANCE — new
 	// information the model needs for its next move. (dontKnow implies
 	// incorrect and carries no confidence: both stay implicit.)
@@ -822,8 +827,9 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	// thinking while reading the teaching. `note` is the pre-rename key —
 	// old records replay through here too, so both feed `thinking`.
 	const thinking = ad.thinking ?? ad.note;
-	if (thinking) out.thinking = thinking;
-	if (ad.readingThinking) out.thinkingWhileReading = ad.readingThinking;
-	if (Array.isArray(ad.images) && ad.images.length > 0) out.photosAttached = ad.images.length;
+	if (thinking) out.thinking = expandCitationsForModel(thinking);
+	if (ad.readingThinking) out.thinkingWhileReading = expandCitationsForModel(ad.readingThinking);
+	const photoCount = ad.photos?.length ?? (Array.isArray(ad.images) ? (ad.images as unknown[]).length : 0);
+	if (photoCount > 0) out.photosAttached = photoCount;
 	return out;
 }

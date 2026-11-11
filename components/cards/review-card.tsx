@@ -124,14 +124,14 @@ export function ReviewCard({
 									onClick={() => onRate(g, outcome)}
 									className={cn(
 										"flex min-h-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-md border px-3 py-3 transition-colors disabled:cursor-wait disabled:opacity-60",
-										g === 1 ? "border-red-500/70! hover:bg-red-500/10" : "border-border hover:bg-accent",
-										suggested === g && (g === 1 ? "bg-red-500/10" : "border-green-500! bg-green-500/15"),
+										g === 1 ? "border-error/70! hover:bg-error/10" : "border-border hover:bg-accent",
+										suggested === g && (g === 1 ? "bg-error/10" : "border-success! bg-success/15"),
 									)}
 								>
 									<span className="flex items-center gap-2 text-xl font-medium text-foreground">
 										{RATING_LABELS[g]}
 										{suggested === g && (
-											<span className={cn("rounded px-1.5 py-0.5 font-ui text-xs uppercase tracking-wider", g === 1 ? "bg-red-500/15 text-red-400" : "bg-green-500/20 text-green-400")}>
+											<span className={cn("rounded px-1.5 py-0.5 font-ui text-xs uppercase tracking-wider", g === 1 ? "bg-error/15 text-error" : "bg-success/20 text-success")}>
 												Predlog
 											</span>
 										)}
@@ -180,7 +180,7 @@ function QuizBody({ card, revealed, onReveal }: { card: Card; revealed: boolean;
 	}, [card.id, card.reps, card.args.options, card.args.correctAnswer]);
 	const multi = card.args.multiSelect === true || correct.length > 1;
 	const [picked, setPicked] = useState<number[]>([]);
-	if (error) return <p className="text-sm text-red-400">Kartica ne može da se prikaže: {error}</p>;
+	if (error) return <p className="text-sm text-error">Kartica ne može da se prikaže: {error}</p>;
 	const toggle = (i: number) => {
 		if (revealed) return;
 		if (!multi) {
@@ -208,8 +208,8 @@ function QuizBody({ card, revealed, onReveal }: { card: Card; revealed: boolean;
 							className={cn(
 								"flex w-full cursor-pointer items-center gap-4 rounded-md border px-3 py-2.5 text-left transition-colors disabled:cursor-default",
 								!revealed && (isPicked ? "border-foreground/60! bg-accent" : "border-border hover:bg-accent"),
-								revealed && isRight && "border-green-500! bg-green-500/15",
-								revealed && !isRight && isPicked && "border-red-500/70! bg-red-500/10",
+								revealed && isRight && "border-success! bg-success/15",
+								revealed && !isRight && isPicked && "border-error/70! bg-error/10",
 								revealed && !isRight && !isPicked && "border-border opacity-60",
 							)}
 						>
@@ -220,11 +220,11 @@ function QuizBody({ card, revealed, onReveal }: { card: Card; revealed: boolean;
 								</MarkdownInsideControl>
 							</span>
 							{revealed && isRight && (
-								<span className="flex items-center gap-1.5 font-ui text-xs uppercase tracking-wider text-green-400">
+								<span className="flex items-center gap-1.5 font-ui text-xs uppercase tracking-wider text-success">
 									<CheckIcon className="size-4" /> Tačno
 								</span>
 							)}
-							{revealed && !isRight && isPicked && <XIcon className="size-4 text-red-400" />}
+							{revealed && !isRight && isPicked && <XIcon className="size-4 text-error" />}
 						</button>
 					);
 				})}
@@ -316,7 +316,7 @@ function ExerciseBody({ card, revealed, onReveal }: { card: Card; revealed: bool
 				<>
 					<Prose scale={questionScale(card.question)}>{lat(card.question)}</Prose>
 					<AnswerBlock label="Rezultat">
-						<p className={cn("text-base", graded ? (result!.exercise!.result!.correct ? "text-green-400" : "text-red-400") : "text-muted-foreground")}>
+						<p className={cn("text-base", graded ? (result!.exercise!.result!.correct ? "text-success" : "text-error") : "text-muted-foreground")}>
 							{result?.dontKnow
 								? "Ne znam"
 								: graded

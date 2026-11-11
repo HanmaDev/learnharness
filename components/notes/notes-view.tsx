@@ -34,9 +34,9 @@ const ago = (iso: string | null) => {
 };
 
 const DOT: Record<NoteStepView["status"], string> = {
-	written: "bg-green-500",
+	written: "bg-success",
 	stale: "bg-muted-foreground/60",
-	pending: "bg-amber-500",
+	pending: "bg-warning",
 	untaught: "bg-muted-foreground/25",
 };
 
@@ -83,7 +83,7 @@ export function NotesView({ chatId }: { chatId: string }) {
 				{data && (
 					<>
 						<span className="hidden shrink-0 items-center gap-2 rounded-full border border-border/80 px-3 py-1 font-ui text-xs uppercase tracking-wide text-muted-foreground lg:flex">
-							{data.steps.length} koraka · <b className="font-medium text-green-400">{written}</b> napisano
+							{data.steps.length} koraka · <b className="font-medium text-success">{written}</b> napisano
 							{latest && <> · ažurirano {ago(latest)}</>}
 						</span>
 						<button
@@ -130,14 +130,14 @@ export function NotesView({ chatId }: { chatId: string }) {
 								<span className={cn("mt-1.5 size-2 shrink-0 rounded-full", DOT[s.status])} aria-hidden />
 								<span className="min-w-0 flex-1">
 									{s.number}. {s.title}
-									{s.status === "pending" && <span className="ml-1.5 font-ui text-[11px] uppercase tracking-wider text-amber-400">u toku</span>}
+									{s.status === "pending" && <span className="ml-1.5 font-ui text-[11px] uppercase tracking-wider text-warning">u toku</span>}
 									{writing.has(s.id) && <span className="ml-1.5 font-ui text-[11px] uppercase tracking-wider text-muted-foreground">pišem…</span>}
 								</span>
 							</button>
 						))}
 					</nav>
 					<div ref={mainRef} className="m-4 min-w-0 flex-1 overflow-y-auto rounded-lg border border-border px-8 pt-4 pb-24" data-testid="notes-body">
-						{data.error && <p className="mb-4 rounded-md border border-red-500/40! px-4 py-2 text-sm text-red-400">Pisanje beleški nije uspelo: {data.error}</p>}
+						{data.error && <p className="mb-4 rounded-md border border-error/40! px-4 py-2 text-sm text-error">Pisanje beleški nije uspelo: {data.error}</p>}
 						<div className="w-full max-w-5xl">
 							{data.steps.map((s) => (
 								<section key={s.id} id={`step-${s.id}`} className="scroll-mt-4 border-b border-border/60 py-6 last:border-b-0">

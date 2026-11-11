@@ -135,7 +135,7 @@ export function ExerciseForm({
 				{ response: finalResponse, dontKnow, thinking: thinkingRef.current, confidence: dontKnow ? undefined : CONFIDENCE_STOPS[confIdx] },
 				toolName,
 			);
-			if (photos.ids.length) answer.images = photos.ids;
+			if (photos.ids.length) answer.photos = photos.ids;
 			onSubmit(answer);
 		} finally {
 			// A refused send keeps the form (and its draft) usable for a retry.
@@ -459,7 +459,7 @@ function MistakeField({ input, line, onChange }: { input: ExerciseToolInput; lin
 					onClick={() => onChange(i + 1)}
 					className={cn(
 						"flex w-full items-start gap-3 px-3 text-left transition-colors hover:bg-accent/50",
-						line === i + 1 && "bg-amber-500/15 outline outline-1 outline-amber-500/60",
+						line === i + 1 && "bg-warning/15 outline outline-1 outline-warning/60",
 					)}
 				>
 					<span className={cn("w-6 shrink-0 text-right text-muted-foreground", MONO)}>{i + 1}</span>
@@ -472,7 +472,7 @@ function MistakeField({ input, line, onChange }: { input: ExerciseToolInput; lin
 
 // ─── match ──────────────────────────────────────────────────────────────────
 
-const PAIR_COLORS = ["bg-sky-500", "bg-amber-500", "bg-emerald-500", "bg-fuchsia-500", "bg-orange-500", "bg-teal-500", "bg-rose-500", "bg-lime-500", "bg-indigo-500", "bg-yellow-500"];
+const PAIR_COLORS = ["bg-sky-500", "bg-warning", "bg-emerald-500", "bg-fuchsia-500", "bg-orange-500", "bg-teal-500", "bg-rose-500", "bg-lime-500", "bg-indigo-500", "bg-yellow-500"];
 
 function MatchField({ input, toolCallId, picks, onChange }: { input: ExerciseToolInput; toolCallId: string; picks: number[]; onChange: (p: number[]) => void }) {
 	const pairs = input.pairs ?? [];
@@ -612,7 +612,7 @@ function SqlField({ input, query, onChange }: { input: ExerciseToolInput; query:
 					<div className="mt-1 text-xs text-muted-foreground">{run.rows.length} row{run.rows.length === 1 ? "" : "s"}{run.truncated || run.rows.length > MAX_SHOWN_ROWS ? " (showing the first 50)" : ""}</div>
 				</div>
 			) : (
-				<div data-testid="exercise-sql-error" className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs text-red-500">{run.error}</div>
+				<div data-testid="exercise-sql-error" className="rounded-lg bg-error/10 px-3 py-2 font-mono text-xs text-error">{run.error}</div>
 			))}
 		</div>
 	);
@@ -664,7 +664,7 @@ function HtmlField({ code, onChange }: { code: string; onChange: (c: string) => 
 // ─── the answered view (AnsweredCard's exercise body) ───────────────────────
 
 function Mark({ ok }: { ok: boolean }) {
-	return ok ? <CheckIcon className="size-3.5 shrink-0 text-green-500" aria-label="right" /> : <XIcon className="size-3.5 shrink-0 text-red-500" aria-label="wrong" />;
+	return ok ? <CheckIcon className="size-3.5 shrink-0 text-success" aria-label="right" /> : <XIcon className="size-3.5 shrink-0 text-error" aria-label="wrong" />;
 }
 
 /** Fork review fix: after "I don't know" (no response to grade), show the
@@ -676,30 +676,30 @@ export function ExerciseSolution({ input }: { input: ExerciseToolInput }) {
 			{input.format === "blanks" && (
 				<div className={cn("rounded-lg border bg-muted/40 px-3 py-2 whitespace-pre-wrap", input.language ? MONO : "leading-7")}>
 					{templateSegments(input.template ?? "").map((seg, i) =>
-						"text" in seg ? <span key={i}>{seg.text}</span> : <span key={i} className="rounded bg-green-500/15 px-1 text-green-500">{input.blanks?.[seg.gap]?.accept[0]}</span>,
+						"text" in seg ? <span key={i}>{seg.text}</span> : <span key={i} className="rounded bg-success/15 px-1 text-success">{input.blanks?.[seg.gap]?.accept[0]}</span>,
 					)}
 				</div>
 			)}
 			{input.format === "order" && (
 				<ol className="flex flex-col gap-1">
 					{(input.steps ?? []).map((s, i) => (
-						<li key={i} className={cn("whitespace-pre-wrap text-green-500", input.language && MONO)}>{i + 1}. {s}</li>
+						<li key={i} className={cn("whitespace-pre-wrap text-success", input.language && MONO)}>{i + 1}. {s}</li>
 					))}
 				</ol>
 			)}
 			{input.format === "find-mistake" && (
 				<div className="overflow-x-auto rounded-lg border bg-muted/40 py-1">
 					{(input.lines ?? []).map((text, i) => (
-						<div key={i} className={cn("flex items-start gap-3 px-3", input.mistakeLine === i + 1 && "bg-green-500/10")}>
+						<div key={i} className={cn("flex items-start gap-3 px-3", input.mistakeLine === i + 1 && "bg-success/10")}>
 							<span className={cn("w-6 shrink-0 text-right text-muted-foreground", MONO)}>{i + 1}</span>
 							<span className={cn("min-w-0 flex-1 whitespace-pre-wrap", input.language ? MONO : "py-0.5")}>{text}</span>
-							{input.mistakeLine === i + 1 && <span className="shrink-0 text-xs text-green-500">the mistake</span>}
+							{input.mistakeLine === i + 1 && <span className="shrink-0 text-xs text-success">the mistake</span>}
 						</div>
 					))}
 				</div>
 			)}
 			{input.format === "sql" && (
-				<pre className="overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap text-green-500">{input.referenceSql}</pre>
+				<pre className="overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap text-success">{input.referenceSql}</pre>
 			)}
 			{input.format === "math" && <ToolContentResponse>{`$${input.answerLatex}$`}</ToolContentResponse>}
 			{input.format === "match" && (
@@ -708,7 +708,7 @@ export function ExerciseSolution({ input }: { input: ExerciseToolInput }) {
 						<li key={i} className="flex items-start gap-2">
 							<span className={cn(input.language && MONO)}>{p.left}</span>
 							<span className="text-muted-foreground">→</span>
-							<span className="text-green-500">{p.right}</span>
+							<span className="text-success">{p.right}</span>
 						</li>
 					))}
 				</ul>
@@ -727,9 +727,9 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 						"text" in seg ? (
 							<span key={i}>{seg.text}</span>
 						) : (
-							<span key={i} className={cn("rounded px-1", result.items[seg.gap] ? "bg-green-500/15 text-green-500" : "bg-red-500/15 text-red-500")}>
+							<span key={i} className={cn("rounded px-1", result.items[seg.gap] ? "bg-success/15 text-success" : "bg-error/15 text-error")}>
 								{response.values[seg.gap] || "—"}
-								{!result.items[seg.gap] && <span className="ml-1 text-green-500">→ {input.blanks?.[seg.gap]?.accept[0]}</span>}
+								{!result.items[seg.gap] && <span className="ml-1 text-success">→ {input.blanks?.[seg.gap]?.accept[0]}</span>}
 							</span>
 						),
 					)}
@@ -750,7 +750,7 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 						<ol className="flex flex-col gap-1">
 							<li className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Correct order</li>
 							{(input.steps ?? []).map((s, i) => (
-								<li key={i} className={cn("whitespace-pre-wrap text-green-500", input.language && MONO)}>
+								<li key={i} className={cn("whitespace-pre-wrap text-success", input.language && MONO)}>
 									{i + 1}. {s}
 								</li>
 							))}
@@ -764,11 +764,11 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 						const chosen = response.line === i + 1;
 						const wrong = input.mistakeLine === i + 1;
 						return (
-							<div key={i} className={cn("flex items-start gap-3 px-3", wrong && "bg-green-500/10", chosen && !wrong && "bg-red-500/10")}>
+							<div key={i} className={cn("flex items-start gap-3 px-3", wrong && "bg-success/10", chosen && !wrong && "bg-error/10")}>
 								<span className={cn("w-6 shrink-0 text-right text-muted-foreground", MONO)}>{i + 1}</span>
 								<span className={cn("min-w-0 flex-1 whitespace-pre-wrap", input.language ? MONO : "py-0.5")}>{text}</span>
 								{chosen && <span className="shrink-0 text-xs text-muted-foreground">your pick</span>}
-								{wrong && <span className="shrink-0 text-xs text-green-500">the mistake</span>}
+								{wrong && <span className="shrink-0 text-xs text-success">the mistake</span>}
 							</div>
 						);
 					})}
@@ -783,8 +783,8 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 								<Mark ok={result.items[i] === true} />
 								<span className={cn(input.language && MONO)}>{p.left}</span>
 								<span className="text-muted-foreground">→</span>
-								<span className={cn(result.items[i] ? "" : "text-red-500 line-through")}>{chose ?? "—"}</span>
-								{!result.items[i] && <span className="text-green-500">{p.right}</span>}
+								<span className={cn(result.items[i] ? "" : "text-error line-through")}>{chose ?? "—"}</span>
+								{!result.items[i] && <span className="text-success">{p.right}</span>}
 							</li>
 						);
 					})}
@@ -794,7 +794,7 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 				<div className="flex flex-col gap-2">
 					<pre className="overflow-auto rounded-lg border bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap">{response.query}</pre>
 					{response.error ? (
-						<div className="rounded-lg bg-red-500/10 px-3 py-2 font-mono text-xs text-red-500">{response.error}</div>
+						<div className="rounded-lg bg-error/10 px-3 py-2 font-mono text-xs text-error">{response.error}</div>
 					) : (
 						<ResultTable columns={response.columns} rows={response.rows} />
 					)}
@@ -805,7 +805,7 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 					{!result.correct && input.referenceSql && (
 						<details className="text-xs">
 							<summary className="cursor-pointer text-muted-foreground">A correct query</summary>
-							<pre className="mt-1 overflow-auto rounded-lg border bg-muted/40 p-2 font-mono whitespace-pre-wrap text-green-500">{input.referenceSql}</pre>
+							<pre className="mt-1 overflow-auto rounded-lg border bg-muted/40 p-2 font-mono whitespace-pre-wrap text-success">{input.referenceSql}</pre>
 						</details>
 					)}
 				</div>
@@ -819,7 +819,7 @@ export function ExerciseAnsweredBody({ input, answer }: { input: ExerciseToolInp
 					{response.verdict === "undecided" && <div className="text-xs text-muted-foreground">The app couldn't decide — the teacher checks this one.</div>}
 					{response.verdict === "different" && (
 						<div className="flex items-center gap-2 text-xs text-muted-foreground">
-							Answer: <span className="text-green-500"><ToolContentResponse>{`$${input.answerLatex}$`}</ToolContentResponse></span>
+							Answer: <span className="text-success"><ToolContentResponse>{`$${input.answerLatex}$`}</ToolContentResponse></span>
 						</div>
 					)}
 				</div>

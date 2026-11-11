@@ -45,8 +45,8 @@ const PACE_LABEL: Record<NonNullable<PlanProgress["pace"]>, string> = {
 };
 const PACE_CLASS: Record<NonNullable<PlanProgress["pace"]>, string> = {
 	"on-track": "text-emerald-500",
-	behind: "text-amber-500",
-	past: "text-red-500",
+	behind: "text-warning",
+	past: "text-error",
 	complete: "text-emerald-500",
 };
 
@@ -63,7 +63,7 @@ export function PlanProgressChip({ progress }: { progress: PlanProgress }) {
 	return (
 		<span data-testid="plan-progress-chip" className="flex items-center gap-1.5 normal-case tracking-normal">
 			<Bar percent={progress.percent} className="w-10" />
-			<span className={cn(progress.pace === "behind" && "text-amber-500", progress.pace === "past" && "text-red-500")}>
+			<span className={cn(progress.pace === "behind" && "text-warning", progress.pace === "past" && "text-error")}>
 				{chipSummary(progress)}
 			</span>
 		</span>
@@ -159,7 +159,7 @@ export function PlanProgressPanel({
 					</button>
 				)}
 				{p.target && <span className="text-muted-foreground/70">set by {p.target.setBy === "learner" ? "you" : "the teacher"}</span>}
-				{error && <span className="text-red-500">{error}</span>}
+				{error && <span className="text-error">{error}</span>}
 			</div>
 		</div>
 	);

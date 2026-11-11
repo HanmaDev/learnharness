@@ -46,10 +46,10 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 						onClick={() => setShow(id)}
 						className={cn(
 							"h-10 cursor-pointer rounded-md border px-3 font-ui text-sm uppercase tracking-wider",
-							show === id ? "border-green-500! text-green-400" : "border-border text-muted-foreground hover:text-foreground",
+							show === id ? "border-success! text-success" : "border-border text-muted-foreground hover:text-foreground",
 						)}
 					>
-						{id === "open" ? "Otvorene" : "Sve"} <b className="ml-1 font-medium text-amber-400">{id === "open" ? open.length : data.mistakes.length}</b>
+						{id === "open" ? "Otvorene" : "Sve"} <b className="ml-1 font-medium text-warning">{id === "open" ? open.length : data.mistakes.length}</b>
 					</button>
 				))}
 				{data.analysing && (
@@ -64,7 +64,7 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 				)}
 			</div>
 
-			{error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+			{error && <p className="mt-3 text-sm text-error">{error}</p>}
 			{rows.length === 0 && (
 				<p className="mt-8 text-base text-muted-foreground">{show === "open" ? "Nema otvorenih grešaka." : "Još nema grešaka u ovom kursu."}</p>
 			)}
@@ -77,8 +77,8 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 									{m.nodeTitle}
 								</Link>
 							)}
-							{m.analysis && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-400">{MISTAKE_TYPE_LABELS[m.analysis.type]}</span>}
-							{m.resolved && <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-400">{m.resolvedByLaterAnswer ? "Rešeno — kasnije tačno" : "Rešeno"}</span>}
+							{m.analysis && <span className="rounded bg-error/15 px-1.5 py-0.5 text-error">{MISTAKE_TYPE_LABELS[m.analysis.type]}</span>}
+							{m.resolved && <span className="rounded bg-success/15 px-1.5 py-0.5 text-success">{m.resolvedByLaterAnswer ? "Rešeno — kasnije tačno" : "Rešeno"}</span>}
 							<span className="ml-auto normal-case tracking-normal">{m.at ? new Date(m.at).toLocaleDateString("sr-Latn") : ""}</span>
 						</div>
 						<ToolContentResponse className="lh-prose mt-2 block text-lg">{m.question}</ToolContentResponse>
@@ -87,7 +87,7 @@ export function MistakesTab({ chatId }: { chatId: string }) {
 								<dt className="font-ui text-xs uppercase tracking-widest text-muted-foreground">Šta nije u redu</dt>
 								<dd className="min-w-0 text-foreground/90"><ToolContentResponse className="lh-prose block">{m.analysis.whatWentWrong}</ToolContentResponse></dd>
 								<dt className="font-ui text-xs uppercase tracking-widest text-muted-foreground">Tačno</dt>
-								<dd className="min-w-0 text-green-400"><ToolContentResponse className="lh-prose block">{m.analysis.correctVersion}</ToolContentResponse></dd>
+								<dd className="min-w-0 text-success"><ToolContentResponse className="lh-prose block">{m.analysis.correctVersion}</ToolContentResponse></dd>
 								<dt className="font-ui text-xs uppercase tracking-widest text-muted-foreground">Pravilo</dt>
 								<dd className="min-w-0 font-semibold text-foreground"><ToolContentResponse className="lh-prose block">{m.analysis.rule}</ToolContentResponse></dd>
 							</dl>
