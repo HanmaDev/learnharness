@@ -170,10 +170,13 @@ describe("send_to_user transcript projection", () => {
 		]), ack()];
 		const before = structuredClone(messages);
 		const view = projectView(messages);
-		assert.deepEqual(view[0]!.parts.map((p) => p.type), ["step-start", "reasoning", "text", "text", "tool-quiz", "text"]);
-		assert.deepEqual(prose(view), ["Before.", "**The lesson.** $x = 1$", "After."]);
+		// Fork (2026-11-11): plain text AFTER delivered prose (before the
+		// learner's next input) is the model's recap — it folds, in place.
+		assert.deepEqual(view[0]!.parts.map((p) => p.type), ["step-start", "reasoning", "text", "text", "tool-quiz", "reasoning"]);
+		assert.deepEqual(prose(view), ["Before.", "**The lesson.** $x = 1$"]);
 		assert.equal(view[0]!.parts.find((p) => p.type === "reasoning")!.text, "Private reasoning.");
-		assert.deepEqual(view[0]!.parts.filter((p) => p.type === "text").map((p) => p.id), ["a1-t0", "a1-t1", "a1-t2"]);
+		assert.equal(view[0]!.parts.at(-1)!.text, "After.");
+		assert.deepEqual(view[0]!.parts.filter((p) => p.type === "text").map((p) => p.id), ["a1-t0", "a1-t1"]);
 		assert.deepEqual(messages, before, "projection never rewrites native content");
 		assert.deepEqual(projectView(JSON.parse(JSON.stringify(messages))), view, "reload is identical, without consulting a provider gate");
 	});
@@ -546,4 +549,40 @@ describe("narration guard native flow (offline)", () => {
 			assert.deepEqual(prose(projectView(messages)), []);
 		});
 	}
+});
+
+describe("send_to_user: the teacher's end-of-turn recap folds (fork, 2026-11-11)", () => {
+	const user = (id: string, text: string): LhMessage => ({ id, role: "user", content: text, timestamp: 1 }) as LhMessage;
+	const answer = (callId: string): LhMessage =>
+		({ id: `r-${callId}`, role: "toolResult", toolCallId: callId, toolName: "quiz", content: [{ type: "text", text: "{}" }], details: { answeredAt: "2026-11-11T10:00:00Z" }, isError: false, timestamp: 2 }) as LhMessage;
+	const parts = (view: ReturnType<typeof projectView>) => view.filter((m) => m.role === "assistant").flatMap((m) => m.parts.filter((p) => p.type !== "step-start").map((p) => `${p.type}:${p.text ?? ""}`));
+
+	it("a recap in the turn's final message shows as collapsed thinking, not a second message", () => {
+		const view = projectView([
+			user("u1", "ajde"),
+			assistant([outputCall("Tačno. Gde smo stali …")], "a1"),
+			ack(),
+			assistant([fauxText("Tačno je, i ovim zadatkom smo završili za danas …")], "a2"),
+		]);
+		assert.deepEqual(prose(view), ["Tačno. Gde smo stali …"]);
+		assert.deepEqual(parts(view), ["text:Tačno. Gde smo stali …", "reasoning:Tačno je, i ovim zadatkom smo završili za danas …"]);
+	});
+
+	it("the learner's next message, or an answer to a question, makes plain text visible again", () => {
+		const view = projectView([
+			user("u1", "ajde"),
+			assistant([outputCall("Lekcija."), fauxToolCall("quiz", { question: "Q?" }, { id: "quiz-1" })], "a1"),
+			ack(),
+			answer("quiz-1"),
+			assistant([fauxText("Odgovor posle kviza.")], "a2"),
+			user("u2", "dalje"),
+			assistant([fauxText("Novi potez.")], "a3"),
+		]);
+		assert.deepEqual(prose(view), ["Lekcija.", "Odgovor posle kviza.", "Novi potez."]);
+	});
+
+	it("turns that never used send_to_user are untouched", () => {
+		const view = projectView([user("u1", "hi"), assistant([fauxText("Obican odgovor.")], "a1")]);
+		assert.deepEqual(prose(view), ["Obican odgovor."]);
+	});
 });

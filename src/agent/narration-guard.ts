@@ -14,6 +14,9 @@ export const SEND_TO_USER_DELIVERY_RULE =
 	"Deliver learner-facing prose through `send_to_user`; ordinary response text may be converted into summarized thinking instead of reaching the learner. " +
 	"Send the complete explanation, example, or commentary before calling the accompanying question tool. " +
 	"Question-only turns do not require an extra message. " +
+	// Fork (2026-11-11): the model ended nearly every turn with a recap of
+	// the message it had just sent, which the learner then read twice.
+	"Once your last `send_to_user` of the turn is sent, end the turn with no further text: do not restate, summarize, or translate what you already sent. " +
 	"A question whose response contains narration but no delivered prose may be rejected so you can deliver the missing explanation and retry.";
 
 export function narrationGuardApplies(

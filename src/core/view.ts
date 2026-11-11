@@ -164,6 +164,14 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 	// user (full history is never hidden); only the MODEL's context jumps.
 	const compaction = activeCompactionOf(messages);
 
+	// Fork (2026-11-11): once the teacher has delivered prose with
+	// send_to_user, its plain end-of-turn text is a recap of what it already
+	// sent (the delivery rule tells it plain text is "summarized thinking").
+	// That text folds into a collapsed thinking row instead of showing as a
+	// second, near-identical message. Reset by the learner's next input: a
+	// message, or an answer to a question.
+	let deliveredSinceInput = false;
+
 	for (const m of messages) {
 		const role = (m as { role?: string }).role;
 
@@ -188,6 +196,7 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 					? [content]
 					: content.filter((c) => c.type === "text").map((c) => (c as { text: string }).text);
 			out.push({ id: m.id, role: "user", parts: texts.map(textPart) });
+			deliveredSinceInput = false;
 			continue;
 		}
 
@@ -198,6 +207,8 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 
 		if (role === "toolResult") {
 			applyResultTo(findToolPart((m as ToolResultMessage).toolCallId), m as ToolResultMessage);
+			// The learner answering a question is new input too.
+			if ((QUESTION_TOOLS as readonly string[]).includes((m as ToolResultMessage).toolName)) deliveredSinceInput = false;
 			continue;
 		}
 
@@ -224,7 +235,13 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 			const streamingMessage = live?.streamingIds.has(m.id) === true;
 			for (const [contentIndex, block] of assistant.content.entries()) {
 				if (block.type === "text") {
-					rest.push({ type: "text", id: `${m.id}-t${textN++}`, text: block.text, state: "done" });
+					if (deliveredSinceInput) {
+						// A recap after delivered prose: collapsed, still readable,
+						// and kept AFTER the message it follows (not partitioned up).
+						rest.push({ type: "reasoning", id: `${m.id}-r${reasoningN++}`, text: block.text, state: "done" });
+					} else {
+						rest.push({ type: "text", id: `${m.id}-t${textN++}`, text: block.text, state: "done" });
+					}
 				} else if (block.type === "thinking") {
 					reasoning.push({ type: "reasoning", id: `${m.id}-r${reasoningN++}`, text: block.thinking, state: "done" });
 				} else if (block.type === "toolCall") {
@@ -245,6 +262,7 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
 							const text = sendToUserText(block);
 							if (text !== undefined) {
 								rest.push({ type: "text", id: `${m.id}-t${textN++}`, text, state: "done" });
+								deliveredSinceInput = true;
 							}
 						}
 						// No live tool card or acknowledgement: this channel is
