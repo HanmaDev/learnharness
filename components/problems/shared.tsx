@@ -11,7 +11,7 @@ import { BRANCHES, OUTCOME_LABELS, OUTCOMES, localDate, resolveDate, type Outcom
 
 export const BTN =
 	"cursor-pointer rounded-md border border-border px-3 py-1.5 font-ui text-xs uppercase tracking-wider text-foreground transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-50";
-export const INPUT = "h-9 rounded-md border border-border bg-background px-3 text-base text-foreground outline-none focus:border-warning!";
+export const INPUT = "h-9 rounded-md border border-border bg-background px-3 text-base text-foreground outline-none focus:border-primary!";
 
 export function useProblemLog() {
 	return useLiveJson<ProblemLog>("/api/problems", { chatId: "problems", debounceMs: 300 });
@@ -203,7 +203,7 @@ export function AttemptDialog({ seed, log, onClose, onSaved }: { seed: DialogSee
 					<button type="button" onClick={onClose} className={BTN}>
 						Otkaži
 					</button>
-					<button type="button" onClick={() => void save()} disabled={!ok} className={cn(BTN, "border-warning! bg-warning font-medium text-black hover:bg-warning")} data-testid="attempt-save">
+					<button type="button" onClick={() => void save()} disabled={!ok} className={cn(BTN, "border-primary! bg-primary font-medium text-primary-foreground hover:bg-primary/90")} data-testid="attempt-save">
 						Sačuvaj
 					</button>
 				</div>

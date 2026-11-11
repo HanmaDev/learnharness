@@ -81,6 +81,24 @@ export function hintRequestText(n: number): string {
 	return `${HINT_REQUEST_PREFIX} — give me the next hint (hint #${n}), just one step.`;
 }
 
+/** Fork: what a native practice submission says to the teacher — the part
+ *  and elapsed-time tags, the learner's text (or a photo placeholder), and
+ *  the app's check of the final answer. */
+export function composePracticeText({ text, final, verdict, part, elapsedMs, photoCount }: {
+	text: string;
+	final?: string;
+	verdict?: "equal" | "different" | "undecided";
+	part?: string;
+	elapsedMs: number;
+	photoCount: number;
+}): string {
+	const tags = [part ? `(${part})` : "", `[elapsed ${formatClock(elapsedMs)}]`].filter(Boolean).join(" ");
+	const finalLine = final && verdict
+		? `\nFinal answer: $${final}$ — app check: ${verdict === "equal" ? "EQUAL to the committed answer" : verdict === "different" ? "DIFFERENT from the committed answer" : "could not decide (judge it yourself)"}`
+		: "";
+	return `${tags}\n${text || (photoCount ? "(photo of my work)" : "")}${finalLine}`;
+}
+
 /** "12:05" from milliseconds. */
 export function formatClock(ms: number): string {
 	const total = Math.max(0, Math.floor(ms / 1000));
@@ -135,7 +153,6 @@ export function PracticeDock({ viewReader, problemCallId, input, posedAt, hintsU
 			thinkingRef.current = v; editRevision.current++;
 			setThinking(v);
 		},
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- setThinking reads the custom-input ref
 		[],
 	);
 	useDictationTarget(dictationAppend, true);
@@ -145,43 +162,39 @@ export function PracticeDock({ viewReader, problemCallId, input, posedAt, hintsU
 	useLayoutEffect(() => { viewReader?.changed?.(); }, [viewReader, thinking]);
 	const submit = async () => {
 		if (compactionRunning || preparing || submittingRef.current) return;
-		// v0.6.0: a plugin's editor (or a prepared submission) owns sending.
-		const prepare = customInput?.prepare ?? onPrepareSubmission;
-		if (prepare) {
-			if (customInput ? !customInput.ready : (!thinkingRef.current.trim() && !hasPendingInput)) return;
+		// v0.6.0: a plugin's own editor owns sending (upstream's path, unchanged).
+		if (customInput) {
+			if (!customInput.ready) return;
 			let capturedRevision = editRevision.current;
-			prepare(() => { capturedRevision = editRevision.current; return customInput ? thinkingRef.current : thinkingRef.current.trim(); }, captured => {
-				if (editRevision.current === capturedRevision && (customInput ? thinkingRef.current : thinkingRef.current.trim()) === captured) { thinkingRef.current = ""; setThinking(""); }
+			customInput.prepare(() => { capturedRevision = editRevision.current; return thinkingRef.current; }, captured => {
+				if (editRevision.current === capturedRevision && thinkingRef.current === captured) { thinkingRef.current = ""; setThinking(""); }
 			});
 			return;
 		}
 		const text = thinkingRef.current.trim();
-		const images = photos.ids;
+		const images = [...photos.ids];
 		const final = finalRef.current.trim();
-		if (text.length === 0 && images.length === 0 && final.length === 0) return;
+		if (text.length === 0 && images.length === 0 && final.length === 0 && !hasPendingInput) return;
 		if (photos.uploading) return;
 		submittingRef.current = true;
 		try {
 			// Fork: the final answer is checked here and the verdict rides along.
-			let finalLine = "";
-			if (final && input.finalAnswerLatex) {
-				const verdict = await mathEquivalent(input.finalAnswerLatex, final);
-				finalLine = `\nFinal answer: $${final}$ — app check: ${verdict === "equal" ? "EQUAL to the committed answer" : verdict === "different" ? "DIFFERENT from the committed answer" : "could not decide (judge it yourself)"}`;
+			const verdict = final && input.finalAnswerLatex ? await mathEquivalent(input.finalAnswerLatex, final) : undefined;
+			const composed = composePracticeText({ text, final, verdict, part: parts ? parts[partIdx]!.label : undefined, elapsedMs: Date.now() - startRef.current, photoCount: images.length });
+			// Clear only what was sent — anything typed meanwhile stays.
+			const clearSent = () => {
+				if (thinkingRef.current.trim() === text) { thinkingRef.current = ""; editRevision.current++; setThinking(""); }
+				if (finalRef.current.trim() === final) { finalRef.current = ""; setFinalAnswer(""); }
+				for (const id of images) photos.remove(id);
+			};
+			if (onPrepareSubmission) {
+				// v0.6.0's prepared path (plugins may add images to it); the
+				// fork's text and photos ride along, cleared once accepted.
+				onPrepareSubmission(() => composed, () => clearSent(), images);
+			} else {
+				clearSent();
+				onSubmit(composed, images.length ? images : undefined);
 			}
-			// Clear only what was sent — anything typed during the check stays.
-			if (thinkingRef.current.trim() === text) {
-				thinkingRef.current = "";
-				setThinking("");
-			}
-			if (finalRef.current.trim() === final) {
-				finalRef.current = "";
-				setFinalAnswer("");
-			}
-			for (const id of images) photos.remove(id);
-			// Fork: tag the part and the elapsed time so the teacher can grade
-			// per part and report time.
-			const tags = [parts ? `(${parts[partIdx]!.label})` : "", `[elapsed ${formatClock(Date.now() - startRef.current)}]`].filter(Boolean).join(" ");
-			onSubmit(`${tags}\n${text || (images.length ? "(photo of my work)" : "")}${finalLine}`, images.length ? images : undefined);
 		} finally {
 			submittingRef.current = false;
 		}

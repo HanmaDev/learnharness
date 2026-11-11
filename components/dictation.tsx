@@ -420,7 +420,7 @@ export function useDictation({ append, destination = "primary", disabled = false
 	/** Fork: the core inputs (composer, question boxes — destination "main")
 	 *  take each finished utterance live with the rest greyed; any other
 	 *  destination (a plugin input) gets one delivery at cleanup, as upstream. */
-	const isLive = () => (destinationRef.current?.id ?? "main") === "main";
+	const isLive = () => primary && (destinationRef.current?.id ?? "main") === "main";
 	const ghostOwner = (): unknown => {
 		const append = destinationRef.current?.append;
 		return append && append === questionTarget ? questionTarget : COMPOSER_GHOST;
@@ -434,7 +434,7 @@ export function useDictation({ append, destination = "primary", disabled = false
 		}
 		if (text) (destinationRef.current?.append ?? appendRef.current)(text);
 		setDictationGhost(ghostOwner(), assemblerRef.current.pending());
-	}, []);
+	}, [primary]);
 
 	/** End of run: whatever was heard, including the last hypothesis (a
 	 *  safety-net teardown must not lose speech). Live destinations get the
@@ -727,6 +727,7 @@ export function useDictation({ append, destination = "primary", disabled = false
 		// buffer makes that flush a no-op. Also kills a "stopping" run: the
 		// flush already underway is abandoned (its timer is cleared inside).
 		assemblerRef.current.reset();
+		bufferRef.current = [];
 		cleanup();
 	}, [cleanup]);
 
@@ -773,6 +774,7 @@ export function useDictation({ append, destination = "primary", disabled = false
 			// Navigation cancels capture: invalidate every pending await before
 			// releasing resources, and never append into a different page's input.
 			assemblerRef.current.reset();
+			bufferRef.current = [];
 			cleanup(false);
 		};
 	}, [cleanup]);

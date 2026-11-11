@@ -499,9 +499,9 @@ function QuestionDockForm({
 	const viewPresentationKey = JSON.stringify({ ...toClientQuestion(qd), questionType: qd.questionType });
 	useLayoutEffect(() => { viewReader?.changed?.(); }, [viewReader, sel, other, text, thinking, confIdx, viewPresentationKey]);
 	const submit = () => {
-		if (!canSubmit || compactionRunning || preparing) return;
+		if (!canSubmit || compactionRunning || preparing || photos.uploading) return;
 		if (onPrepareSubmission) {
-			onPrepareSubmission({ question: qd, isCurrent: () => mounted.current && currentQuestion.current === qd && isInteractionScopeEligible(rootRef.current, controller), capture: captureRequest });
+			onPrepareSubmission({ question: qd, isCurrent: () => mounted.current && currentQuestion.current === qd && isInteractionScopeEligible(rootRef.current, controller), capture: captureRequest, ...(photos.ids.length ? { photos: [...photos.ids] } : {}) });
 			return;
 		}
 		/* FINISH DICTATION FIRST (owner, 2026-10-01): Enter may arrive while

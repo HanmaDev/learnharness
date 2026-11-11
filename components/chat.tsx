@@ -711,7 +711,8 @@ export function Chat({
 			question: { ...toClientQuestion(question), occurrence: { messageId: pending.messageId, contentIndex: pending.contentIndex, toolCallId: pending.toolCallId, toolName: pending.tool }, ...(question.questionType ? { questionType: question.questionType } : {}) },
 		};
 	};
-	const prepareBuiltin: PrepareBuiltinSubmission = ({ question, capture, isCurrent }: BuiltinSubmissionCapture) => {
+	const prepareBuiltin: PrepareBuiltinSubmission = (prepareArgs: BuiltinSubmissionCapture) => {
+		const { question, capture, isCurrent } = prepareArgs;
 		const target = builtinTarget(question), original = pending;
 		if (!target || !original || busyRef.current || compacting) return;
 		void runSubmission(target, () => {
@@ -733,7 +734,8 @@ export function Chat({
 			// Save newer native edits without changing the prepared payload.
 			capture(); saveQuestionDraft(original.key, { readingThinking: readingThinkingRef.current });
 			attempt.deliver();
-			return send({ type: "answer", toolCallId: original.toolCallId, occurrence: target.question.occurrence, answer: { ...answer, ...(images ? { images } : {}) } }, attempt.accepted, original.key, attempt.refused);
+			const photos = prepareArgs.photos ?? [];
+			return send({ type: "answer", toolCallId: original.toolCallId, occurrence: target.question.occurrence, answer: { ...answer, ...(images ? { images } : {}), ...(photos.length ? { photos } : {}) } }, attempt.accepted, original.key, attempt.refused);
 		});
 	};
 	const thinkingTarget = (): Extract<PluginSubmissionTarget, { type: "thinking" }> | undefined => {
@@ -741,15 +743,15 @@ export function Chat({
 		if (!surfaceTarget || !activeProblem || activeProblem.pluginProblem || !occurrence) return;
 		return { type: "thinking", sessionId: chatId, sessionKind: kind === "practice" ? "practice" : "teaching", surfaceTarget, channels: ["content"], problem: { occurrence, statement: (activeProblem.input as { statement: string }).statement } };
 	};
-	const prepareThinking: PrepareThinkingSubmission = (capture, clear) => {
+	const prepareThinking: PrepareThinkingSubmission = (capture, clear, photos = []) => {
 		const target = thinkingTarget();
 		if (!target || busyRef.current || compacting) return;
 		let captured = "";
 		void runSubmission(target, () => ({ type: "thinking", content: { text: captured = capture(), images: [] } }), () => !busyRef.current && JSON.stringify(activeProblemOccurrenceOf(submissionLive.current.nativeMessages)) === JSON.stringify(target.problem.occurrence), async (prepared, attempt) => {
 			if (prepared.type !== "thinking") return false;
-			if (!prepared.content.text.trim() && !prepared.content.images.length) throw new Error("Thinking text or images are required. Your input has been kept.");
+			if (!prepared.content.text.trim() && !prepared.content.images.length && !photos.length) throw new Error("Thinking text or images are required. Your input has been kept.");
 			attempt.deliver();
-			return send({ type: "thinking", problemCallId: target.problem.occurrence.toolCallId, occurrence: target.problem.occurrence, text: prepared.content.text, ...(prepared.content.images.length ? { images: prepared.content.images.map(image => ({ ...image })) } : {}) }, () => { clear(captured); attempt.accepted(); }, undefined, attempt.refused);
+			return send({ type: "thinking", problemCallId: target.problem.occurrence.toolCallId, occurrence: target.problem.occurrence, text: prepared.content.text, ...(prepared.content.images.length ? { images: prepared.content.images.map(image => ({ ...image })) } : {}), ...(photos.length ? { photos } : {}) }, () => { clear(captured); attempt.accepted(); }, undefined, attempt.refused);
 		});
 	};
 	const pluginProblemTarget = (): Extract<PluginSubmissionTarget, { type: "plugin-problem-submission" }> | undefined => {

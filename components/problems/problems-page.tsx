@@ -173,7 +173,7 @@ function CategoryBar({ log, active, onPick, run, chats }: { log: ProblemLog; act
 							}}
 							className={cn(
 								"flex-auto cursor-pointer px-5 py-2 font-ui text-sm uppercase tracking-wider",
-								active === c.id ? "bg-warning font-medium text-black" : "text-muted-foreground hover:text-foreground",
+								active === c.id ? "bg-primary font-medium text-primary-foreground" : "text-muted-foreground hover:text-foreground",
 							)}
 						>
 							{c.label}
@@ -265,7 +265,7 @@ function CategoryMenu({ log, id, run, chats, onClose }: { log: ProblemLog; id: s
 							<label key={c.id} className="flex cursor-pointer items-center gap-1.5 text-sm">
 								<input
 									type="checkbox"
-									className="accent-warning"
+									className="accent-primary"
 									checked={log.courseCategory[c.id] === id}
 									onChange={(e) => void run({ op: "course-category", chatId: c.id, categoryId: e.target.checked ? id : null })}
 								/>

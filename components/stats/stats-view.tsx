@@ -64,7 +64,7 @@ export function StatsPage() {
 									onClick={() => setRange(id)}
 									className={cn(
 										"cursor-pointer rounded px-4 py-1.5 font-ui text-sm uppercase tracking-wider",
-										range === id ? "bg-warning font-medium text-black" : "text-muted-foreground hover:text-foreground",
+										range === id ? "bg-primary font-medium text-primary-foreground" : "text-muted-foreground hover:text-foreground",
 									)}
 								>
 									{label}
@@ -201,7 +201,7 @@ function YearGrid({ cells }: { cells: StatsView["year"] }) {
 							<span
 								key={c.date}
 								title={`${c.date}: ${c.minutes} min`}
-								className={cn("aspect-square w-full rounded-[2px]", shade(c), c.date === today && "ring-1 ring-warning")}
+								className={cn("aspect-square w-full rounded-[2px]", shade(c), c.date === today && "ring-1 ring-primary")}
 							/>
 						))}
 					</div>

@@ -472,7 +472,7 @@ function MistakeField({ input, line, onChange }: { input: ExerciseToolInput; lin
 
 // ─── match ──────────────────────────────────────────────────────────────────
 
-const PAIR_COLORS = ["bg-sky-500", "bg-warning", "bg-emerald-500", "bg-fuchsia-500", "bg-orange-500", "bg-teal-500", "bg-rose-500", "bg-lime-500", "bg-indigo-500", "bg-yellow-500"];
+const PAIR_COLORS = ["bg-sky-500", "bg-[#f59e0b]", "bg-emerald-500", "bg-fuchsia-500", "bg-orange-500", "bg-teal-500", "bg-rose-500", "bg-lime-500", "bg-indigo-500", "bg-yellow-500"];
 
 function MatchField({ input, toolCallId, picks, onChange }: { input: ExerciseToolInput; toolCallId: string; picks: number[]; onChange: (p: number[]) => void }) {
 	const pairs = input.pairs ?? [];

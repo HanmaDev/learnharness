@@ -3,9 +3,12 @@ export interface BuiltinSubmissionCapture {
 	question: QuestionData;
 	capture(): AnswerRequest;
 	isCurrent(): boolean;
+	/** Fork: snapshot ids of photos attached to this answer. */
+	photos?: string[];
 }
 export type PrepareBuiltinSubmission = (capture: BuiltinSubmissionCapture) => void;
-export type PrepareThinkingSubmission = (capture: () => string, onAccepted: (captured: string) => void) => void;
+/** Fork: `photos` = snapshot ids of attached photos of handwritten work. */
+export type PrepareThinkingSubmission = (capture: () => string, onAccepted: (captured: string) => void, photos?: string[]) => void;
 export type PreparePluginProblemSubmission = (capture: () => Extract<ChatInput, { type: "plugin-problem-submission" }>, isCurrent: () => boolean, onAccepted: () => void) => Promise<boolean>;
 export type PreparePluginQuestionSubmission = (capture: () => Extract<ChatInput, { type: "plugin-question-answer" }>, isCurrent: () => boolean) => Promise<boolean>;
 export function submissionImages(input: Extract<PluginSubmission, { type: "answer" | "plugin-question-answer" }>, channels: readonly string[]): PluginSubmissionImages | undefined {

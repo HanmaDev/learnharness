@@ -43,6 +43,28 @@ describe("legacy side threads → upstream side threads", () => {
 		assert.equal(t!.messages[2]!.error, "Odgovor je prekinut.", "an answer cut by a restart reads as interrupted");
 		assert.deepEqual(migrateLegacySideThreads(m), m, "idempotent");
 		assert.deepEqual(migrateLegacySideThreads({ ...m, sideThreads: record.sideThreads }).sideChats!.length, 1, "never duplicated");
+		assert.equal(t!.anchor.partId, "m1-t0", "upstream's segment anchor shape");
+	});
+
+	it("threads in the same segment merge (none unreachable); a thread with no teacher prose is kept, not dropped", () => {
+		const user = { id: "u0", role: "user", content: "hi", timestamp: Date.parse("2026-11-01T09:00:00Z") } as unknown as LhMessage;
+		const rec = {
+			...record,
+			messages: [user, teacher("m1", Date.parse("2026-11-01T10:00:00Z"), "Lekcija."), teacher("m2", Date.parse("2026-11-01T10:30:00Z"), "Nastavak.")],
+			sideThreads: [
+				{ id: "st_1", createdAt: "2026-11-01T10:10:00Z", messages: [{ id: "q1", role: "user", text: "Prvo?", at: "2026-11-01T10:10:00Z" }] },
+				{ id: "st_2", createdAt: "2026-11-01T10:40:00Z", messages: [{ id: "q2", role: "user", text: "Drugo?", at: "2026-11-01T10:40:00Z" }] },
+			],
+		} as unknown as ChatRecord;
+		const m = migrateLegacySideThreads(rec);
+		assert.equal(m.sideChats!.length, 1, "m1 and m2 are one segment: one thread");
+		assert.deepEqual(m.sideChats![0]!.messages.map((x) => x.id), ["q1", "q2"]);
+		assert.deepEqual(migrateLegacySideThreads(m), m, "idempotent after a merge");
+
+		const bare = { ...record, messages: [], sideThreads: record.sideThreads } as unknown as ChatRecord;
+		const kept = migrateLegacySideThreads(bare);
+		assert.equal(kept.sideChats!.length, 0);
+		assert.equal((kept.sideThreads as unknown[]).length, 1, "kept in the legacy field until it can be placed");
 	});
 });
 

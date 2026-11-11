@@ -438,8 +438,9 @@ export function hydratePhotos(
 			// Fork photo ids: `photos`, or `images` as a plain list (pre-v0.6.0 records).
 			const d = m.details as { photos?: unknown; images?: unknown } | null;
 			const ids = Array.isArray(d?.photos) ? d.photos : d?.images;
-			if (!Array.isArray(ids) || ids.length === 0 || m.content.some((c) => c.type === "image")) return m;
-			const blocks = photoContent(ids.filter((id): id is string => typeof id === "string").map((id) => ({ snapshotId: id, ...snapshots[id] })));
+			if (!Array.isArray(ids) || ids.length === 0) return m;
+			const present = new Set(m.content.flatMap((c) => (c.type === "image" ? [c.data] : [])));
+			const blocks = photoContent(ids.filter((id): id is string => typeof id === "string").map((id) => ({ snapshotId: id, ...snapshots[id] }))).filter((b) => !present.has(b.data));
 			return blocks.length ? { ...m, content: [...m.content, ...blocks] } : m;
 		}
 		return m;
