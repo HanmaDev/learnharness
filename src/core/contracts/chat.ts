@@ -168,6 +168,10 @@ export interface SideChatMessage {
 	pending?: boolean;
 	/** assistant only: the call failed; `text` is whatever arrived. */
 	error?: string;
+	/** Fork: assistant only — the learner saved this answer into the step's notes. */
+	savedToNotes?: boolean;
+	/** Fork: assistant only — the Kartice card made from this answer. */
+	cardId?: string;
 }
 
 /** One side thread per explanation and associated question, displayed in

@@ -1,5 +1,8 @@
 /** CLI capacity is session-reported; a compaction target is not its window.
  * All provider work is synthetic. The executable marker is NEVER launched. */
+// Fork: side chats are private in the app; these upstream tests exercise the
+// sharing machinery itself, so they turn it on (src/server/chat-handler.ts).
+process.env.LH_SIDE_CHATS_REACH_TEACHER = "1";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

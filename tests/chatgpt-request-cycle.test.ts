@@ -1,3 +1,6 @@
+// Fork: side chats are private in the app; these upstream tests exercise the
+// sharing machinery itself, so they turn it on (src/server/chat-handler.ts).
+process.env.LH_SIDE_CHATS_REACH_TEACHER = "1";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { type Model } from "@earendil-works/pi-ai";

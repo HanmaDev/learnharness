@@ -1,6 +1,9 @@
 /** Offline regressions: new raw side exchanges enter main history once,
  * after selected-request admission, without waiting for helper completion or
  * changing earlier context. Late activity stays queued for the next request. */
+// Fork: side chats are private in the app; these upstream tests exercise the
+// sharing machinery itself, so they turn it on (src/server/chat-handler.ts).
+process.env.LH_SIDE_CHATS_REACH_TEACHER = "1";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

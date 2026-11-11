@@ -1,5 +1,6 @@
 "use client";
 
+import { SideKeepButtons } from "@/components/side-keep-buttons";
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, CornerDownLeft, GripVertical, MessageCircleQuestion, Mic, Pin, PinOff, Square, X } from "lucide-react";
 import { actionForBinding, collectCitations, eventBinding, SIDE_QUOTE_MAX_CHARS, SIDE_QUESTION_MAX_CHARS, type TextSelector, type TutorCitation } from "@/src/core";
@@ -133,6 +134,8 @@ export function SideThreadBody({ state, chatId, draft, readDraft, dictation, onD
 						{message.role === "user" ? <p className="whitespace-pre-wrap font-medium">{message.text}</p> : <MessageResponse>{message.text}</MessageResponse>}
 						{message.stopped && <span className="font-ui text-xs text-muted-foreground">Stopped</span>}
 						{message.error && <span role="alert" className="text-xs text-destructive">{message.error}</span>}
+						{/* Fork: keep a finished answer in the notes, or make a card from it. */}
+						{chatId && <SideKeepButtons chatId={chatId} threadId={state.threadId} message={message} />}
 					</div>
 				))}
 				{state.answering && <div data-testid="side-streaming-answer" className="text-sm">

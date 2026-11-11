@@ -16,6 +16,7 @@ import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
 import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, ImageSnapshot, PlanTree, SideChatThread, TurnUsage } from "../core/contracts.ts";
 import { deriveDoneNodes, type PlanTarget } from "../core/plan-progress.ts";
+import { migrateLegacySideThreads } from "../core/side-chat-migration.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import type { CourseCards } from "../core/cards.ts";
@@ -79,7 +80,8 @@ function getChat(id: string): ChatRecord | null {
 		console.error(`[chat ${id}] record stamped with schema version ${v} > ${CURRENT_CHAT_VERSION} — this app build is older; refusing to read it`);
 		return null;
 	}
-	return parsed as ChatRecord;
+	// Fork: the pre-v0.6.0 side threads move to upstream's format (persisted by the next write).
+	return migrateLegacySideThreads(parsed as ChatRecord);
 }
 
 function listChats(): ChatSummary[] {

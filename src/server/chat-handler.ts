@@ -52,7 +52,17 @@ import { modelsNotConfigured, providerKeyMissing as providerKeyMissingEnvelope, 
 import { beginTurn, endTurn, isTurnRunning } from "./turn-liveness.ts";
 import { claimPreparingTurn, type TurnPreparation } from "./turn-preparation.ts";
 import { applyParkedDismissal } from "./dismissal-park.ts";
-import { sideConversationEntries } from "../core/side-chat.ts";
+import { sideConversationEntries as sharedSideEntries } from "../core/side-chat.ts";
+
+/** Fork (2026-11-11, learner decision): side questions stay private — the
+ *  teacher never receives side conversations. Upstream shares every
+ *  exchange with the next teacher request; every sharing point goes
+ *  through this one switch, so it is easy to audit and to revisit. */
+export function sideChatsReachTeacher(): boolean {
+	// Off in the app. Upstream's own tests of the sharing machinery turn it on.
+	return process.env.LH_SIDE_CHATS_REACH_TEACHER === "1";
+}
+const sideConversationEntries: typeof sharedSideEntries = (...args) => (sideChatsReachTeacher() ? sharedSideEntries(...args) : []);
 import { sideChats, type SideChatService } from "./side-chat.ts";
 import { SIDE_CONTEXT_BUDGET_ERROR, sideBudgetRetryDrops, sideContextWindow } from "./side-context-budget.ts";
 import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.ts";
