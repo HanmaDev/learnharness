@@ -60,6 +60,7 @@ export { fetchTranscript, transcriptMarkdown, youtubeId } from "./youtube.ts";
 export * from "./mistakes.ts";
 export * from "./problems.ts";
 export * from "./tracker.ts";
+export { parsePlacementRun, runPlacementCode, runPlacementTests, placementCodeQuestion, type PlacementRunRequest } from "./placement-code.ts";
 export { keepSideAnswer, sideThreadStep, type KeepOp } from "./side-keep.ts";
 export { sideChats, createSideChatService, type SideChatService, type SideChatDeps, type SideStreamEvent } from "./side-chat.ts";
 export { runPiTurn, piTurnResponse, type PiTurnHandle, type PiTurnSpec } from "./pi/ui-stream.ts";

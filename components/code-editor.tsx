@@ -16,10 +16,20 @@ type EditorViewLike = {
 	destroy(): void;
 };
 
+/** Fork: the editor's languages (exercises: sql/html; Test znanja code: c/cpp/python). */
+export type EditorLanguage = "sql" | "html" | "c" | "cpp" | "python";
+
+function languageExtension(language: EditorLanguage) {
+	if (language === "sql") return import("@codemirror/lang-sql").then((m) => m.sql());
+	if (language === "html") return import("@codemirror/lang-html").then((m) => m.html());
+	if (language === "python") return import("@codemirror/lang-python").then((m) => m.python());
+	return import("@codemirror/lang-cpp").then((m) => m.cpp()); // c and cpp
+}
+
 async function createEditor(
 	parent: HTMLElement,
 	doc: string,
-	language: "sql" | "html",
+	language: EditorLanguage,
 	ariaLabel: string,
 	hooks: { current: { onChange: (v: string) => void; onRun?: () => void } },
 ): Promise<EditorViewLike> {
@@ -27,7 +37,7 @@ async function createEditor(
 		import("codemirror"),
 		import("@codemirror/view"),
 		import("@codemirror/state"),
-		language === "sql" ? import("@codemirror/lang-sql").then((m) => m.sql()) : import("@codemirror/lang-html").then((m) => m.html()),
+		languageExtension(language),
 	]);
 	const theme = EditorView.theme(
 		{
@@ -80,7 +90,7 @@ export function CodeEditor({
 }: {
 	value: string;
 	onChange: (v: string) => void;
-	language: "sql" | "html";
+	language: EditorLanguage;
 	onRun?: () => void;
 	minHeight?: number;
 	ariaLabel: string;

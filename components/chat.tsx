@@ -3000,6 +3000,7 @@ export function DockOverlay({
 									toolCallId={pending.toolCallId}
 									input={pending.input as never}
 									onSubmit={onSubmitAnswer}
+									onPrepare={onPrepareBuiltin}
 									onTalk={onTalk}
 								/>
 							) : pluginQuestion && pluginDraft ? (

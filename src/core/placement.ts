@@ -30,17 +30,36 @@ export function startModeText(mode: StartMode): string {
 
 // ─── placement_test ────────────────────────────────────────────────────────
 
-export const PLACEMENT_QUESTION_KINDS = ["quiz", "short", "math"] as const;
+export const PLACEMENT_QUESTION_KINDS = ["quiz", "short", "math", "code"] as const;
+
+/** Fork (2026-11-11): the Coding questions contract — `program` started
+ *  directly (no shell) from PATH, `code` on its stdin, the learner's code in
+ *  `answer.txt` in a fresh working folder; exit 0 = passed. */
+export const placementTestsSchema = Type.Object({
+	program: Type.String({ minLength: 1, description: 'The program to start, e.g. "python" (see your coding instructions: C/C++ through a python driver).' }),
+	args: Type.Array(Type.String(), { description: 'Its arguments, e.g. ["-"].' }),
+	code: Type.String({ minLength: 1, description: "Sent to its stdin: the full test driver. Prints one line per failed case and a final 'N/M tests passed'; exits 1 on any failure." }),
+});
+export type PlacementTests = Static<typeof placementTestsSchema>;
+
+export const PLACEMENT_LANGUAGES = ["c", "cpp", "python"] as const;
+export type PlacementLanguage = (typeof PLACEMENT_LANGUAGES)[number];
 
 export const placementQuestionSchema = Type.Object({
 	id: Type.String({ minLength: 1, maxLength: 40, description: "Unique within the test, e.g. 'html-2'." }),
-	kind: Type.Union([Type.Literal("quiz"), Type.Literal("short"), Type.Literal("math")], {
-		description: "quiz = multiple choice (app-graded); short = free short answer (YOU grade it from correctAnswer); math = a formula answer (app-graded, Wolfram when unsure).",
+	kind: Type.Union([Type.Literal("quiz"), Type.Literal("short"), Type.Literal("math"), Type.Literal("code")], {
+		description:
+			"quiz = multiple choice (app-graded); short = free short answer (YOU grade it from correctAnswer); math = a formula answer (app-graded, Wolfram when unsure); " +
+			"code = the learner writes a program (c / cpp / python) in an editor — publicTests run when they ask, the hidden tests run on submit and their results come back to you to grade.",
 	}),
+	language: Type.Optional(Type.Union([Type.Literal("c"), Type.Literal("cpp"), Type.Literal("python")], { description: "code: the language." })),
+	starterCode: Type.Optional(Type.String({ maxLength: 4_000, description: "code: optional starting code shown in the editor." })),
+	publicTests: Type.Optional(placementTestsSchema),
+	tests: Type.Optional(placementTestsSchema),
 	question: Type.String({ minLength: 1, description: "Markdown; code in fenced blocks; math in $…$." }),
 	options: Type.Optional(Type.Array(Type.Object({ label: Type.String(), value: Type.String() }), { description: "quiz: 3-5 options." })),
 	correctAnswer: Type.Union([Type.String(), Type.Array(Type.String())], {
-		description: "quiz: the correct option value(s). short: the model answer you will grade against. math: the expected answer in LaTeX.",
+		description: "quiz: the correct option value(s). short: the model answer you will grade against. math: the expected answer in LaTeX. code: the model solution (Markdown with a fenced code block).",
 	}),
 });
 export type PlacementQuestion = Static<typeof placementQuestionSchema>;
@@ -81,6 +100,13 @@ export function placementTestProblems(input: PlacementTestInput): string[] {
 				const keys = Array.isArray(q.correctAnswer) ? q.correctAnswer : [q.correctAnswer];
 				if (!keys.length || keys.some((k) => !values.has(k))) problems.push(`question "${q.id}": correctAnswer must be option value(s).`);
 			} else if (typeof q.correctAnswer !== "string" || !q.correctAnswer.trim()) problems.push(`question "${q.id}": needs a correctAnswer.`);
+			if (q.kind === "code") {
+				if (!q.language) problems.push(`question "${q.id}": a code question needs language (c / cpp / python).`);
+				if (!q.tests) problems.push(`question "${q.id}": a code question needs hidden tests.`);
+				if (!q.publicTests) problems.push(`question "${q.id}": a code question needs publicTests — a few example cases the learner can run.`);
+			} else if (q.tests || q.publicTests || q.starterCode || q.language) {
+				problems.push(`question "${q.id}": tests, publicTests, starterCode and language belong only to kind "code".`);
+			}
 		}
 	}
 	return problems;
@@ -96,7 +122,25 @@ export interface PlacementAnswer {
 	correct?: boolean;
 	/** math: decided by Wolfram|Alpha. */
 	checkedBy?: "wolfram";
+	/** code: the hidden tests' outcome (run on submit). */
+	hidden?: CodeRunSummary;
+	/** code: how often the learner ran the public examples. */
+	publicRuns?: number;
+	/** Photos attached to this question: 1-based positions in the answer's photos. */
+	photos?: number[];
 }
+
+/** One run of a question's tests, as the grader and the page see it. */
+export interface CodeRunSummary {
+	status: "passed" | "failed" | "error";
+	exitCode: number | null;
+	stdout: string;
+	stderr: string;
+	/** Killed at the time limit. */
+	timedOut?: boolean;
+}
+
+const clip = (t: string, n = 3_000) => (t.length > n ? `${t.slice(0, n)}… [cut]` : t);
 
 export function quizCorrect(q: PlacementQuestion, chosen: readonly string[]): boolean {
 	const keys = Array.isArray(q.correctAnswer) ? q.correctAnswer : [q.correctAnswer];
@@ -108,7 +152,10 @@ export function placementAnswerText(test: PlacementTestInput, answers: readonly 
 	const by = new Map(answers.map((a) => [a.qid, a]));
 	return JSON.stringify({
 		placementTest: test.title,
-		note: "short answers are ungraded: grade them yourself against correctAnswer from your placement_test call; then call placement_result.",
+		note:
+			"short answers are ungraded: grade them yourself against correctAnswer from your placement_test call. code answers: the code is in `answer`, " +
+			"`hiddenTests` is the result of your hidden tests (exit 0 = all passed) — grade with it and by reading the code (partial credit is yours to give). " +
+			"`photos` are 1-based positions among the attached photos (each photo is sent once, even when two answers share it); a drawing from the Drawing pad, if any, is attached BEFORE the photos and is not counted in those positions. Then call placement_result.",
 		topics: test.topics.map((t) => {
 			const qs = t.questions.map((q) => {
 				const a = by.get(q.id);
@@ -118,6 +165,11 @@ export function placementAnswerText(test: PlacementTestInput, answers: readonly 
 					answer: a?.dontKnow ? "(ne znam)" : (a?.value ?? "(bez odgovora)"),
 					...(a?.correct !== undefined ? { correct: a.correct } : {}),
 					...(a?.checkedBy ? { checkedBy: "Wolfram|Alpha" } : {}),
+					...(q.kind === "code" && a?.hidden
+						? { hiddenTests: { status: a.hidden.status, exitCode: a.hidden.exitCode, ...(a.hidden.timedOut ? { timedOut: true } : {}), output: clip(a.hidden.stdout), errors: clip(a.hidden.stderr, 1_500) } }
+						: {}),
+					...(q.kind === "code" && a?.publicRuns ? { ranPublicExamples: a.publicRuns } : {}),
+					...(a?.photos?.length ? { photos: a.photos } : {}),
 				};
 			});
 			const graded = qs.filter((q) => "correct" in q);

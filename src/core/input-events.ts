@@ -312,7 +312,9 @@ export function parseChatInput(input: unknown): ChatInput {
  * double-answering.
  */
 /** Fork: at most this many photos ride one submission. */
-export const MAX_PHOTOS_PER_SUBMISSION = 4;
+/** Per submission. A question's tray holds 4; a whole Test znanja (one
+ *  answer for many questions) may carry up to 12. */
+export const MAX_PHOTOS_PER_SUBMISSION = 12;
 
 function parsePhotoIds(value: unknown): string[] {
 	if (value === undefined) return [];
