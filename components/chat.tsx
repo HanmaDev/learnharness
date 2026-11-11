@@ -311,7 +311,10 @@ export function Chat({
 	const submissionMounted = useRef(true);
 	useEffect(() => { submissionMounted.current = true; return () => { submissionMounted.current = false; submissionRunner.dispose(); }; }, [submissionRunner]);
 	useEffect(() => () => submissionRunner.dispose(), [surfaceTarget, submissionRunner]);
-	const inputViewReader = useRef<(() => PluginSessionViewInput) | null>(null) as SessionInputViewReader;
+	// Fork fix (v0.6.0 bug): React seals useRef objects during development SSR,
+	// so `.changed = …` below threw (HTTP 500 on /chat/:id in `next dev`).
+	// A stable plain object behaves the same and stays extensible.
+	const [inputViewReader] = useState(() => ({ current: null }) as SessionInputViewReader);
 	const [, refreshViewContext] = useState(0);
 	const notifyViewChanged = useCallback(() => { if (submissionMounted.current) refreshViewContext(value => value + 1); }, []);
 	inputViewReader.changed = notifyViewChanged;
@@ -2604,9 +2607,10 @@ export function DockOverlay({
 	const readingInputRef = useRef<HTMLDivElement>(null);
 	const ownsDock = !!pending || !!pluginQuestion || unreadablePlugin || !!practice;
 	const initialPendingRef = useRef(pendingId);
-	const nativeViewReader = useRef<(() => NativeQuestionViewState) | null>(null) as ViewReaderRef<NativeQuestionViewState>;
-	const practiceViewReader = useRef<(() => string) | null>(null) as ViewReaderRef<string>;
-	const customViewReader = useRef<(() => { available: boolean }) | null>(null) as ViewReaderRef<{ available: boolean }>;
+	// Fork fix: plain stable objects, not sealed dev-SSR refs (see inputViewReader).
+	const [nativeViewReader] = useState(() => ({ current: null }) as ViewReaderRef<NativeQuestionViewState>);
+	const [practiceViewReader] = useState(() => ({ current: null }) as ViewReaderRef<string>);
+	const [customViewReader] = useState(() => ({ current: null }) as ViewReaderRef<{ available: boolean }>);
 	nativeViewReader.changed = practiceViewReader.changed = customViewReader.changed = viewReader?.changed;
 
 	// Teach-question ARRIVAL state, applied during render — BEFORE the
