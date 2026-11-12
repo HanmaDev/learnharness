@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, it } from "node:test";
-import { SEARCH_ENGINES, type SearchEngineId } from "../src/core/search.ts";
+import { SEARCH_ENGINES as ALL_ENGINES, type SearchEngineId } from "../src/core/search.ts";
+// The keyed engines (the fork's keyless Claude engine has no key to save).
+const SEARCH_ENGINES = ALL_ENGINES.filter((e): e is Extract<(typeof ALL_ENGINES)[number], { envVar: string }> => e.envVar !== null);
 
 // Real settings/auth composition with fake keys and an injected transport only.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lh-search-expansion-"));

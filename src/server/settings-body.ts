@@ -242,6 +242,23 @@ export function parseAgentSettingsBody(body: unknown): SettingsBodyResult<AgentS
 		}
 		settings.graphTools = graphTools.enabled === undefined ? {} : { enabled: graphTools.enabled };
 	}
+	// Fork toggles (2026-11-12): web search on/off, Read only / Bypass.
+	if (raw.webSearch !== undefined) {
+		const webSearch = asRecord(raw.webSearch);
+		if (!webSearch) return { ok: false, error: "webSearch must be an object" };
+		if (webSearch.enabled !== undefined && typeof webSearch.enabled !== "boolean") {
+			return { ok: false, error: "webSearch.enabled must be a boolean" };
+		}
+		settings.webSearch = webSearch.enabled === undefined ? {} : { enabled: webSearch.enabled };
+	}
+	if (raw.access !== undefined) {
+		const access = asRecord(raw.access);
+		if (!access) return { ok: false, error: "access must be an object" };
+		if (access.mode !== undefined && access.mode !== "read" && access.mode !== "bypass") {
+			return { ok: false, error: 'access.mode must be "read" or "bypass"' };
+		}
+		settings.access = access.mode === undefined ? {} : { mode: access.mode };
+	}
 	if (raw.fileAccess !== undefined) {
 		const parsed = parseFileAccessSettings(raw.fileAccess);
 		if (!parsed.ok) return parsed;

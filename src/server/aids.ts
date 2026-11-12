@@ -8,7 +8,9 @@ import * as fs from "node:fs";
 import { categoryHint, logAttempt } from "./problems.ts";
 import { listTrackerProblems, trackerAvailable, trackerFacets, trackerImageFile, trackerProblem, trackerReference, type TrackerProblem } from "./tracker.ts";
 import { fieldsMatch, parseArchiveQuery, titleFields } from "./tracker-match.ts";
-import { stores } from "./stores.ts";
+import { effectiveSettings, stores } from "./stores.ts";
+import { agentAccessMode, webSearchEnabled } from "../core/settings-resolution.ts";
+import { searchProvider } from "./search.ts";
 import { makeCardsFor, planStepsText, problemEditFor, problemListText } from "./teacher-records.ts";
 import type { AgentAids, MakeCardInput } from "../agent/tools/aids.ts";
 import { wolframAvailable, wolframLlmQuery } from "./wolfram.ts";
@@ -34,7 +36,11 @@ function safePlanSteps(chatId: string): string {
 }
 
 export function agentAids(chatId?: string): AgentAids {
+	// Fork toggles (2026-11-12), read fresh per turn: web tools and Bypass.
+	const effective = effectiveSettings();
 	return {
+		...(webSearchEnabled(effective) ? { webSearch: searchProvider } : {}),
+		...(agentAccessMode(effective) === "bypass" ? { systemAccess: true } : {}),
 		...(chatId
 			? {
 					openMistakes: () => {

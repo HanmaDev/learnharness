@@ -56,6 +56,7 @@ function runWithAbortGuard<T>(
 	toolName: string,
 	run: (signal: AbortSignal) => T | Promise<T>,
 	parent: AbortSignal | undefined,
+	overrideMs?: number,
 ): Promise<T> {
 	const controller = new AbortController();
 	const forwardAbort = () => controller.abort();
@@ -63,7 +64,9 @@ function runWithAbortGuard<T>(
 		if (parent.aborted) controller.abort();
 		else parent.addEventListener("abort", forwardAbort, { once: true });
 	}
-	const timeoutMs = toolTimeoutMs.current;
+	// Fork (2026-11-12): a tool that legitimately runs longer (run_command,
+	// a web search through Claude) names its own limit; the default stays.
+	const timeoutMs = overrideMs ?? toolTimeoutMs.current;
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	const humanTimeout = timeoutMs >= 1_000 ? `${Math.round(timeoutMs / 1000)}s` : `${timeoutMs}ms`;
 	let graceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -197,6 +200,7 @@ export function serverExecute<P extends TSchema>(
 	toolName: string,
 	schema: P,
 	run: (input: Static<P>, ctx: ToolExecuteContext) => unknown,
+	options: { timeoutMs?: (input: Static<P>) => number } = {},
 ): AgentTool<any>["execute"] {
 	// The returned execute is deliberately typed loose (params: unknown) so
 	// it satisfies every AgentTool slot — heterogeneous registries type
@@ -207,7 +211,7 @@ export function serverExecute<P extends TSchema>(
 	// P infers from the call site, not the loose surface.
 	return async (toolCallId, input: unknown, signal) =>
 		toToolResult(
-			await runWithAbortGuard(toolName, (toolSignal) => run(input as Static<P>, { toolCallId, signal: toolSignal }), signal),
+			await runWithAbortGuard(toolName, (toolSignal) => run(input as Static<P>, { toolCallId, signal: toolSignal }), signal, options.timeoutMs?.(input as Static<P>)),
 		);
 }
 

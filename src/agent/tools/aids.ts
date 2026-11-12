@@ -3,6 +3,9 @@ import { Type } from "typebox";
 import { serverExecute } from "../tool-execute.ts";
 import { createWolframTool, type WolframQuery } from "./wolfram.ts";
 import { createYoutubeTool, type YoutubeFetch } from "./youtube.ts";
+import { createWebTools } from "./web.ts";
+import { systemAccessTools } from "./system-access.ts";
+import type { SearchProvider } from "../../core/search.ts";
 
 /** Fork (2026-11-08): optional helpers every conversation agent can carry —
  *  Wolfram (only when the learner set an App ID) and YouTube transcripts. */
@@ -25,6 +28,12 @@ export interface AgentAids {
 	makeCards?: (cards: MakeCardInput[]) => string;
 	/** This course's plan steps ("id: title" lines), for make_cards. */
 	planSteps?: string;
+	/** Fork (2026-11-12): Settings → Web search ON — web_search + web_fetch,
+	 *  the live engine resolved per search (null = honestly unavailable). */
+	webSearch?: () => SearchProvider | null;
+	/** Fork (2026-11-12): Settings → Access = Bypass — write_file, edit_file,
+	 *  run_command. */
+	systemAccess?: boolean;
 }
 
 export interface ProblemListInput {
@@ -73,6 +82,8 @@ export function aidTools(aids: AgentAids | undefined): Record<string, AgentTool<
 		...(aids?.problemList ? { problem_log_list: createProblemListTool(aids.problemList) } : {}),
 		...(aids?.problemEdit ? { problem_log_edit: createProblemEditTool(aids.problemEdit, aids.problemCategories ?? "") } : {}),
 		...(aids?.makeCards ? { make_cards: createMakeCardsTool(aids.makeCards, aids.planSteps ?? "") } : {}),
+		...(aids?.webSearch ? createWebTools(aids.webSearch) : {}),
+		...(aids?.systemAccess ? systemAccessTools() : {}),
 	};
 }
 

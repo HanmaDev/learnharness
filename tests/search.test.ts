@@ -287,7 +287,7 @@ describe("ollamaProvider (hosted search only)", () => {
 
 describe("five-engine catalog and resolution", () => {
 	it("pins the approved Automatic order independently of table-driven tests", () => {
-		assert.deepEqual(SEARCH_ENGINES.map(({ id }) => id), ["tavily", "brave", "exa", "firecrawl", "ollama"]);
+		assert.deepEqual(SEARCH_ENGINES.map(({ id }) => id), ["tavily", "brave", "exa", "firecrawl", "ollama", "claude"]);
 		assert.equal(isSearchEngineId("chatgpt"), false);
 		assert.equal(isSearchEngineId("deepseek"), false);
 		for (const value of [null, {}, 1, "", "toString"]) assert.equal(isSearchEngineId(value), false);
@@ -311,7 +311,7 @@ describe("five-engine catalog and resolution", () => {
 			const missing = resolveSearchEngineFor(id, keys);
 			assert.equal(missing.available, false);
 			assert.equal(missing.engine, null);
-			assert.ok(missing.reason.includes(envVar));
+			assert.ok(missing.reason.includes(envVar ?? "Claude Code"));
 		});
 	}
 });

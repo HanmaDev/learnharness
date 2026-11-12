@@ -9,7 +9,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { getHeadless } from "../agent/subagents/headless.ts";
 
-const ROOT = () => path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "rs.matematika.tracker");
+// Fork (OneDrive sync): a computer without the Tracker reads the synced
+// read-only copy the desktop shell points at (LH_TRACKER_DIR).
+const ROOT = () => process.env.LH_TRACKER_DIR || path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "rs.matematika.tracker");
 const DB = () => path.join(ROOT(), "matematika-tracker.sqlite3");
 const MANAGED = () => path.join(ROOT(), "managed");
 

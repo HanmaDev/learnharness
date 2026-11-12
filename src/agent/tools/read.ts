@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { Type } from "typebox";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -87,11 +88,59 @@ function readTextSlice(text: string, offset: number | undefined, limit: number |
  */
 export type ReadModel = Pick<Model<Api>, "input" | "inputLimits">;
 
+const PICTURE_EXT = /\.(jpe?g|png|gif|webp|bmp|svg)$/i;
+const MAX_LISTED_PICTURES = 40;
+
+/** Fork (2026-11-12, owner: "show images when given sources that contain
+ *  images"): the pictures a source slice references — `[Slika: path]`
+ *  markers, markdown images, `<img src>` — with the line they sit near.
+ *  Relative paths resolve against the source file's folder; web URLs and
+ *  data: URIs are not local pictures and are left out. */
+export function sourcePictures(text: string, sourceFile: string): Array<{ path: string; near: string }> {
+	const out: Array<{ path: string; near: string }> = [];
+	const seen = new Set<string>();
+	const lines = text.split("\n");
+	const patterns = [/\[Slika:\s*([^\]]+?)\s*\]/g, /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g, /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi];
+	for (const [index, line] of lines.entries()) {
+		for (const pattern of patterns) {
+			for (const match of line.matchAll(pattern)) {
+				const raw = match[1]!.trim();
+				if (/^(https?:|data:|file:)/i.test(raw) || !PICTURE_EXT.test(raw.split(/[?#]/)[0]!)) continue;
+				let decoded = raw;
+				try { decoded = decodeURI(raw); } catch { /* a bare % stays literal */ }
+				const resolved = path.isAbsolute(decoded) ? decoded : path.resolve(path.dirname(sourceFile), decoded);
+				if (seen.has(resolved)) continue;
+				seen.add(resolved);
+				const context = [0, -1, 1, -2, 2, -3, 3].map((d) => lines[index + d] ?? "")
+					.map((l) => l.replace(/\[Slika:[^\]]*\]|!\[[^\]]*\]\([^)]*\)|<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+					.find((l) => l.length > 0) ?? "";
+				out.push({ path: resolved, near: context.length > 90 ? `${context.slice(0, 90)}…` : context });
+			}
+		}
+	}
+	return out;
+}
+
+/** The note appended to a teacher's read of a source part with pictures. */
+export function pictureReminder(pictures: ReadonlyArray<{ path: string; near: string }>): string {
+	if (pictures.length === 0) return "";
+	const listed = pictures.slice(0, MAX_LISTED_PICTURES);
+	const more = pictures.length - listed.length;
+	return [
+		"",
+		"",
+		`[Pictures in this part (${pictures.length}). Show each one with show_image when your teaching reaches its passage, in the same reply as that explanation, with a short caption. Skip only purely decorative ones (logos, icons, repeats). Never describe a picture you can show.`,
+		...listed.map((p, i) => `${i + 1}. ${p.path}${p.near ? ` — near: "${p.near}"` : ""}`),
+		...(more > 0 ? [`… and ${more} more in this part.`] : []),
+		"]",
+	].join("\n");
+}
+
 /** One implementation for every learner-file reader. Bind the active model
  * per agent, rather than sharing mutable model state between conversations.
  * Home-relative paths, text slicing and the app's abort guard stay unchanged;
  * image detection/processing and its notes follow native Pi read behavior. */
-export function createReadTool(model?: ReadModel): AgentTool<typeof readInput> {
+export function createReadTool(model?: ReadModel, options: { pictures?: boolean } = {}): AgentTool<typeof readInput> {
 	return {
 		name: "read",
 		label: "read",
@@ -115,7 +164,9 @@ export function createReadTool(model?: ReadModel): AgentTool<typeof readInput> {
 					...(processed.ok ? { images: [{ data: processed.data, mimeType: processed.mimeType }] } : {}),
 				};
 			}
-			return readTextSlice(buffer.toString("utf-8"), offset, limit);
+			const slice = readTextSlice(buffer.toString("utf-8"), offset, limit);
+			// The teacher (who can show_image) is told which pictures this part holds.
+			return options.pictures ? slice + pictureReminder(sourcePictures(slice, absolute)) : slice;
 		}),
 	};
 }

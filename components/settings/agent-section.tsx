@@ -187,6 +187,16 @@ export function composeGraphTools(agent: AgentSettings | undefined, on: boolean)
 	return { ...agent, graphTools: { enabled: on } };
 }
 
+/** Fork (2026-11-12): the web-search toggle. Pure — exported for tests. */
+export function composeWebSearch(agent: AgentSettings | undefined, on: boolean): AgentSettings {
+	return { ...agent, webSearch: { enabled: on } };
+}
+
+/** Fork (2026-11-12): Read only / Bypass. Pure — exported for tests. */
+export function composeAccessMode(agent: AgentSettings | undefined, mode: "read" | "bypass"): AgentSettings {
+	return { ...agent, access: { mode } };
+}
+
 /** Compose: one slot's model/thinking override. Empty model = absent
  *  override (Default — falls to the factory pin); empty thinking = the
  *  tier keeps its resolved thinking budget. Per-field independence, same
@@ -431,7 +441,8 @@ export function AgentSection({
 			.then((body: { keys: { id: string; present: boolean }[] }) => {
 				const present: Partial<Record<SearchEngineId, boolean>> = {};
 				for (const { id, envVar } of SEARCH_ENGINES) {
-					present[id] = body.keys.some((k) => k.id === envVar && k.present);
+					// Keyless engines (Claude subscription) are always selectable.
+					present[id] = envVar === null || body.keys.some((k) => k.id === envVar && k.present);
 				}
 				setEngineKeys(present);
 			})
@@ -891,6 +902,49 @@ export function AgentSection({
 										</button>
 									);
 								})}
+							</div>
+						</SettingsRow>
+					);
+				})()}
+				{/* Fork (2026-11-12): the session agents' web tools and reach. */}
+				<SettingsRow
+					label="Web search"
+					hint="The tutor can search the web and read pages (through your Claude subscription when no search key is set)"
+					testid="web-search-row"
+				>
+					<Toggle
+						checked={agent?.webSearch?.enabled === true}
+						label="web search"
+						onChange={(on) => onSectionChange(composeWebSearch(agent, on))}
+					/>
+				</SettingsRow>
+				{(() => {
+					const mode = agent?.access?.mode === "bypass" ? "bypass" : "read";
+					return (
+						<SettingsRow
+							label="Access"
+							hint={mode === "bypass"
+								? "Bypass: reads anywhere, writes and edits files, runs commands — no prompts"
+								: "Read only: reads your files under File access below"}
+							testid="access-mode-row"
+						>
+							<div role="radiogroup" aria-label="Access mode" className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+								{(["read", "bypass"] as const).map((m) => (
+									<button
+										key={m}
+										type="button"
+										role="radio"
+										aria-checked={m === mode}
+										data-testid={`access-mode-${m}`}
+										onClick={() => onSectionChange(composeAccessMode(agent, m))}
+										className={cn(
+											"h-8 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors",
+											m === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+										)}
+									>
+										{m === "read" ? "Read only" : "Bypass"}
+									</button>
+								))}
 							</div>
 						</SettingsRow>
 					);

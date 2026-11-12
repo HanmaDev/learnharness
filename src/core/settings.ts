@@ -352,6 +352,11 @@ export interface DictationSettings {
 }
 
 /** Agent settings — everything about the non-conversation machinery. */
+/** Fork (2026-11-12): how far the session agents reach on this computer.
+ *  read = the learner-file read tools under File access (default);
+ *  bypass = read anywhere plus write/edit files and run commands. */
+export type AgentAccessMode = "read" | "bypass";
+
 export interface AgentSettings {
 	/** Maximum simultaneous background-worker model requests (default 8).
 	 *  Direct conversations bypass this limit. Positive safe integers only:
@@ -377,6 +382,11 @@ export interface AgentSettings {
 	 *  tool-toggles map. Absent = enabled (the toggle discipline); the
 	 *  effective gate composes graph.enabled AND this switch. */
 	graphTools?: { enabled?: boolean };
+	/** Fork (2026-11-12): web_search + web_fetch for the prober, teacher and
+	 *  practice agents. Absent = OFF. */
+	webSearch?: { enabled?: boolean };
+	/** Fork (2026-11-12): Read only / Bypass. Absent = read. */
+	access?: { mode?: AgentAccessMode };
 	/** System-prompt override SWITCHES keyed by segment path (absent key =
 	 *  off). Switch-on requires the override file to exist (enforced by the
 	 *  route); the switch is explicit so users keep a file on disk but run
@@ -763,6 +773,17 @@ function sanitizeAgent(raw: Record<string, unknown>): AgentSettings {
 		const enabled = (raw.graphTools as Record<string, unknown>).enabled;
 		if (enabled === undefined) out.graphTools = {};
 		else if (typeof enabled === "boolean") out.graphTools = { enabled };
+	}
+	// Fork toggles: lenient read side (a bad shape drops to the default).
+	if (raw.webSearch !== null && typeof raw.webSearch === "object" && !Array.isArray(raw.webSearch)) {
+		const enabled = (raw.webSearch as Record<string, unknown>).enabled;
+		if (enabled === undefined) out.webSearch = {};
+		else if (typeof enabled === "boolean") out.webSearch = { enabled };
+	}
+	if (raw.access !== null && typeof raw.access === "object" && !Array.isArray(raw.access)) {
+		const mode = (raw.access as Record<string, unknown>).mode;
+		if (mode === undefined) out.access = {};
+		else if (mode === "read" || mode === "bypass") out.access = { mode };
 	}
 	// Never drop a malformed access policy into the unrestricted default.
 	// The strict store reader separately reports its configuration error;

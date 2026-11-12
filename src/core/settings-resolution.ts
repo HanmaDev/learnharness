@@ -88,6 +88,10 @@ export interface EffectiveSettings {
 		/** Prober graph tools (wave 7): passthrough delta as stored —
 		 * absent/undefined enabled = ON; consumers use graphToolsEnabled. */
 		graphTools: { enabled?: boolean };
+		/** Fork: as stored; absent enabled = OFF (webSearchEnabled). */
+		webSearch: { enabled?: boolean };
+		/** Fork: as stored; absent mode = read (agentAccessMode). */
+		access: { mode?: "read" | "bypass" };
 	};
 	/** The resolved strong/cheap/vision slots: each tier's concrete model or
 	 *  NULL when the tier holds no model (no factory floor — BYOK all the
@@ -209,6 +213,8 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 			prompts: agent.prompts ?? {},
 			search: agent.search ?? {},
 			graphTools: agent.graphTools ?? {},
+			webSearch: agent.webSearch ?? {},
+			access: agent.access ?? {},
 		},
 		models: {
 			strong: resolveSlot(modelsSection.strong),
@@ -282,6 +288,16 @@ export function renderingEnabled(graph: { rendering: boolean }): boolean {
  * effective gate composes the graph master switch AND the toggle.
  * Teacher's tool factories consume this at registration time.
  */
+/** Fork (2026-11-12): the session agents' web tools — OFF unless switched on. */
+export function webSearchEnabled(effective: { agent: { webSearch: { enabled?: boolean } } }): boolean {
+	return effective.agent.webSearch.enabled === true;
+}
+
+/** Fork (2026-11-12): Read only (default) or Bypass. */
+export function agentAccessMode(effective: { agent: { access: { mode?: "read" | "bypass" } } }): "read" | "bypass" {
+	return effective.agent.access.mode === "bypass" ? "bypass" : "read";
+}
+
 export function graphToolsEnabled(effective: {
 	graph: { enabled: boolean };
 	agent: { graphTools: { enabled?: boolean } };

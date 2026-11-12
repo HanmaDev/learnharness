@@ -219,7 +219,7 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	// before resolving additive plugins. Explicit registries remain caller-owned.
 	const builtinTools = [
 		...tools.map((tool) => tool.name === "read" && tool.execute === readTool.execute
-			? { ...tool, execute: createReadTool(engine.model).execute as AgentTool<any>["execute"] }
+			? { ...tool, execute: createReadTool(engine.model, { pictures: kind === "teacher" }).execute as AgentTool<any>["execute"] }
 			: tool),
 		...(sendToUserApplies(kind, engine.model, opts.tools !== undefined)
 			? [withArgumentHeal(sendToUserTool)]

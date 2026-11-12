@@ -33,6 +33,7 @@ const { attachSubscriptionChild, subscriptionControl } = require("./subscription
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
 const { backupNow, restoreIfEmpty } = require("./data-backup.cjs");
+const deviceSync = require("./device-sync.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -54,7 +55,8 @@ const PRODUCT_NAME = "LearnHarness";
 // "LearnHarness-dev".
 app.setName(PRODUCT_NAME);
 const AUTH_FILE = () => path.join(app.getPath("userData"), "auth.json");
-const DATA_DIR = () => path.join(app.getPath("userData"), "data");
+// Fork (OneDrive sync, 2026-11-12): device.json may point at a synced folder.
+const DATA_DIR = () => deviceSync.resolveDataDir(app.getPath("userData"));
 /** Automatic snapshots live OUTSIDE userData (fork, 2026-11-07). */
 const BACKUP_DIR = () => process.env.LH_BACKUP_DIR || path.join(app.getPath("documents"), "LearnHarness-rezervne-kopije");
 const BACKUP_EVERY_MS = 10 * 60_000;
@@ -254,6 +256,10 @@ function startServer(port) {
 					PORT: String(port),
 					HOSTNAME: "127.0.0.1", // the server defaults to 0.0.0.0 — never
 					LH_DATA_DIR: DATA_DIR(),
+					// Fork (OneDrive sync): this computer's course-path mappings and,
+					// without a local Tracker, the synced read-only copy.
+					LH_PATH_ALIASES: JSON.stringify(deviceSync.validAliases(deviceSync.readDeviceConfig(app.getPath("userData")).pathAliases)),
+					...(deviceSync.trackerDirFor(process.env, DATA_DIR()) ? { LH_TRACKER_DIR: deviceSync.trackerDirFor(process.env, DATA_DIR()) } : {}),
 					// The auth/keys store — the child reads AND writes this file itself
 					// (no env injection anymore: a spawn-time copy would shadow every
 					// settings-page key change until restart; env wins over file).
@@ -728,6 +734,93 @@ function showStartupWindow() {
 
 let quitting = false;
 
+/** Fork (OneDrive sync): before anything reads the data folder — offer the
+ *  synced data on a computer that has not chosen yet, warn when the app is
+ *  open on the other computer, report OneDrive conflict copies. False = quit. */
+function deviceStartup() {
+	const userData = app.getPath("userData");
+	const parent = startupWin && !startupWin.isDestroyed() ? startupWin : undefined;
+	const box = (options) => (parent ? dialog.showMessageBoxSync(parent, options) : dialog.showMessageBoxSync(options));
+	let config = deviceSync.readDeviceConfig(userData);
+	const offer = deviceSync.syncOffer({ userData, env: process.env, config });
+	if (offer) {
+		const choice = box({
+			type: "question",
+			title: PRODUCT_NAME,
+			buttons: ["Koristi OneDrive podatke", "Ne, ostani na ovom računaru"],
+			defaultId: 0,
+			cancelId: 1,
+			noLink: true,
+			message: "Pronađeni su LearnHarness podaci u OneDrive-u.",
+			detail: `${offer.dataDir}\n\nSa OneDrive podacima ovaj računar ima iste sesije, kartice, beleške i zadatke kao drugi računar. Lokalni podaci ovog računara ostaju netaknuti.`,
+		});
+		config = choice === 0
+			? { ...config, dataDir: offer.dataDir, pathAliases: offer.pathAliases }
+			: { ...config, declinedSync: true };
+		deviceSync.writeDeviceConfig(userData, config);
+		log(choice === 0 ? `sync: using ${offer.dataDir}` : "sync: declined the OneDrive data");
+		if (choice === 0) {
+			// Keep the synced folder downloaded (not online-only) on this computer.
+			try { spawn("attrib", ["+P", offer.root, "/S", "/D"], { stdio: "ignore", windowsHide: true }).on("error", () => {}); } catch { /* best effort */ }
+		}
+	}
+	if (!deviceSync.isSynced(userData, config)) return true;
+	// Never swap a missing synced folder for this computer's stale local data.
+	while (deviceSync.syncedFolderMissing(userData, config)) {
+		const choice = box({
+			type: "warning",
+			title: PRODUCT_NAME,
+			buttons: ["Pokušaj ponovo", "Koristi lokalne podatke", "Zatvori"],
+			defaultId: 0,
+			cancelId: 2,
+			noLink: true,
+			message: "OneDrive fascikla sa LearnHarness podacima nije dostupna.",
+			detail: `${config.dataDir}\n\nPokreni OneDrive (ili sačekaj da se prijavi i sinhronizuje), pa izaberi „Pokušaj ponovo”. „Koristi lokalne podatke” isključuje sinhronizaciju na ovom računaru; lokalni podaci mogu biti stariji.`,
+		});
+		if (choice === 2) return false;
+		if (choice === 1) {
+			const { dataDir: _synced, ...rest } = config;
+			config = { ...rest, declinedSync: true };
+			deviceSync.writeDeviceConfig(userData, config);
+			log("sync: synced folder missing — switched this computer to local data");
+			return true;
+		}
+	}
+	const dataDir = DATA_DIR();
+	for (;;) {
+		const holder = deviceSync.otherHolder(deviceSync.readLock(dataDir));
+		if (!holder) break;
+		const choice = box({
+			type: "warning",
+			title: PRODUCT_NAME,
+			buttons: ["Pokušaj ponovo", "Otvori ipak", "Zatvori"],
+			defaultId: 0,
+			cancelId: 2,
+			noLink: true,
+			message: `LearnHarness je otvoren na računaru ${holder.host}.`,
+			detail: `Poslednji put aktivan pre ${deviceSync.ago(Date.now() - Date.parse(holder.heartbeat))}. Ako je otvoren na oba računara u isto vreme, OneDrive pravi sukobljene kopije. Zatvori ga tamo, sačekaj da OneDrive sinhronizuje, pa izaberi „Pokušaj ponovo”.`,
+		});
+		if (choice === 1) { log(`sync: opened despite the lock of ${holder.host}`); break; }
+		if (choice === 2) return false;
+	}
+	try { deviceSync.writeLock(dataDir); } catch (err) { log(`sync: lock write FAILED: ${err && err.message}`); }
+	setInterval(() => { try { deviceSync.writeLock(dataDir); } catch { /* next beat */ } }, deviceSync.LOCK_HEARTBEAT_MS).unref();
+	app.on("before-quit", () => deviceSync.releaseLock(dataDir));
+	const copies = deviceSync.conflictCopies(dataDir);
+	if (copies.length) {
+		log(`sync: OneDrive conflict copies: ${copies.join(", ")}`);
+		box({
+			type: "warning",
+			title: PRODUCT_NAME,
+			buttons: ["U redu"],
+			noLink: true,
+			message: "OneDrive je napravio sukobljene kopije podataka.",
+			detail: `LearnHarness koristi originale; kopije su netaknute u ${dataDir}:\n\n${copies.slice(0, 12).join("\n")}${copies.length > 12 ? `\n… i još ${copies.length - 12}` : ""}`,
+		});
+	}
+	return true;
+}
+
 async function main() {
 	app.on("window-all-closed", () => {
 		chatgpt?.pause();
@@ -747,6 +840,7 @@ async function main() {
 	await app.whenReady();
 	// Only the packaged app waits for its own server; dev points at a running one.
 	if (!process.env.LH_DEV_URL) await showStartupWindow();
+	if (!process.env.LH_DEV_URL && !deviceStartup()) { app.quit(); return; }
 
 	// Read the same record/custom theme the server uses before constructing
 	// any native window, including the external development shell.
@@ -788,7 +882,9 @@ async function main() {
 		await subscriptions.ready;
 		// Data safety first: restore an emptied data dir, then snapshot.
 		try {
-			const restored = restoreIfEmpty({ dataDir: DATA_DIR(), authFile: AUTH_FILE(), root: BACKUP_DIR() });
+			// Never refill a synced folder from this computer's backups: an empty
+			// view of OneDrive is a sync state, and refilling would make conflicts.
+			const restored = deviceSync.isSynced(app.getPath("userData")) ? null : restoreIfEmpty({ dataDir: DATA_DIR(), authFile: AUTH_FILE(), root: BACKUP_DIR() });
 			if (restored) log(`data dir had no chats — RESTORED from ${restored}`);
 		} catch (err) {
 			log(`restore check FAILED: ${err && err.stack ? err.stack : err}`);

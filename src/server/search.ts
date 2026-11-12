@@ -21,6 +21,8 @@
 
 import { SEARCH_ENGINES, type SearchEngineId, type SearchHit, type SearchProvider, type SearchStatus } from "../core/search.ts";
 import { keyValue } from "./keys.ts";
+import { claudeCodeAvailable } from "./claude-code-config.ts";
+import { claudeSearchProvider } from "./claude-search.ts";
 import { effectiveSettings } from "./stores.ts";
 
 /** The wire-callable shape the adapters close over (tests inject a stub). */
@@ -228,6 +230,8 @@ function searchHit(title: unknown, url: unknown, snippet: unknown): SearchHit[] 
 /** The engine's key (env-or-file; env wins) — null when the engine is
  *  not keyed, which by owner decision means NOT LIVE. */
 function engineKey(id: SearchEngineId): string | null {
+	// Fork: the keyless Claude engine is live when Claude Code is set up.
+	if (id === "claude") return claudeCodeAvailable() ? "subscription" : null;
 	const envVar = SEARCH_ENGINES.find((e) => e.id === id)?.envVar;
 	const value = envVar ? keyValue(envVar) : undefined;
 	return value ? value : null;
@@ -257,7 +261,9 @@ export function resolveSearchEngineFor(
 			return {
 				available: false,
 				engine: null,
-				reason: `search engine is set to "${pinned}" but its API key is missing — set the ${SEARCH_ENGINES.find((e) => e.id === pinned)?.envVar} key`,
+				reason: pinned === "claude"
+					? 'search engine is set to "claude" but Claude Code is not installed, signed in and enabled on this computer'
+					: `search engine is set to "${pinned}" but its API key is missing — set the ${SEARCH_ENGINES.find((e) => e.id === pinned)?.envVar} key`,
 				key: null,
 			};
 		}
@@ -270,7 +276,7 @@ export function resolveSearchEngineFor(
 	return {
 		available: false,
 		engine: null,
-		reason: "no search engine configured — set a Tavily, Brave, Exa, Firecrawl, or Ollama search API key",
+		reason: "no search engine configured — enable Claude Code, or set a Tavily, Brave, Exa, Firecrawl, or Ollama search API key",
 		key: null,
 	};
 }
@@ -308,6 +314,8 @@ export function searchProvider(): SearchProvider | null {
 			return firecrawlProvider(resolved.key);
 		case "ollama":
 			return ollamaProvider(resolved.key);
+		case "claude":
+			return claudeSearchProvider();
 		default:
 			return null;
 	}

@@ -2,7 +2,7 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AUTH_FILE } from "../../../config.ts";
+import { AUTH_FILE, PATHS } from "../../../config.ts";
 import { comparisonPath, guardSourcePath, isWithin, realSourcePath as realOrMissing, resolvePolicy, type ResolvedFileAccessPolicy } from "./file-access.ts";
 
 /**
@@ -181,10 +181,45 @@ function checkedSourcePath(absolute: string, denied: (absolute: string) => boole
  *  These path checks are not protection against a hostile concurrent OS user. */
 export function resolveSourcePath(p?: string, policy?: ResolvedFileAccessPolicy): string {
 	const home = os.homedir();
-	const resolved = !p ? home : p === "~" || p.startsWith("~/") || p.startsWith(`~${path.sep}`)
+	const resolved = aliasedPath(homePath(p, home));
+	return guardSourcePath(checkedSourcePath(resolved, sourcePathCheck(home)), policy);
+}
+
+function homePath(p: string | undefined, home: string): string {
+	return !p ? home : p === "~" || p.startsWith("~/") || p.startsWith(`~${path.sep}`)
 		? path.join(home, p.slice(1))
 		: path.resolve(home, p);
-	return guardSourcePath(checkedSourcePath(resolved, sourcePathCheck(home)), policy);
+}
+
+/** Fork (2026-11-12, OneDrive sync): lessons written on one computer name
+ *  paths under that computer's course folder (e.g. Documents/Ucenje/Kursevi).
+ *  The device config maps such roots to this computer's synced copy; a path
+ *  that does not exist here but does under its mapped root is opened there. */
+export interface PathAlias { from: string; to: string }
+let pathAliases: () => readonly PathAlias[] = () => [];
+export function setPathAliases(provider: () => readonly PathAlias[]): void { pathAliases = provider; }
+export function aliasedPath(absolute: string, aliases: readonly PathAlias[] = pathAliases(), exists: (p: string) => boolean = fsSync.existsSync): string {
+	if (aliases.length === 0 || exists(absolute)) return absolute;
+	for (const { from, to } of aliases) {
+		if (!isWithin(absolute, from, process.platform === "win32")) continue;
+		const mapped = path.join(to, path.relative(from, absolute));
+		if (exists(mapped)) return mapped;
+	}
+	return absolute;
+}
+
+/** Fork (2026-11-12, Bypass mode): where write_file / edit_file / run_command
+ *  may write: the credential denials of reads, plus LearnHarness's own data
+ *  folder (writing under the running app could corrupt a session). */
+export function resolveWritablePath(p: string): string {
+	const home = os.homedir();
+	const resolved = aliasedPath(homePath(p, home));
+	const sensitive = sourcePathCheck(home);
+	// The running data folder, this computer's whole LearnHarness folder (the
+	// local data, logs, device.json) and the synced OneDrive\\LearnHarness.
+	const roots = [PATHS.data, path.dirname(AUTH_FILE), ...(process.env.OneDrive ? [path.join(process.env.OneDrive, "LearnHarness")] : [])];
+	const dataRoots = roots.flatMap((root) => [root, protectedRealPath(root)]);
+	return checkedSourcePath(resolved, (absolute) => sensitive(absolute) || dataRoots.some((root) => isWithin(absolute, root, process.platform === "win32")));
 }
 
 /** Explicit paths retain their HOME meaning. Only an omitted directory in

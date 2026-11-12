@@ -143,7 +143,7 @@ export function createWebTools(search: () => SearchProvider | null): Record<stri
 			description: "Search the web. One search per call — use one call per search angle. " +
 				"Returns an array of results with title, url, and snippet.",
 			parameters: webSearchInput,
-			execute: serverExecute("web_search", webSearchInput, async ({ query, count }): Promise<WebSearchResult[] | string> => {
+			execute: serverExecute("web_search", webSearchInput, async ({ query, count }, { signal }): Promise<WebSearchResult[] | string> => {
 				const provider = search();
 				if (!provider) {
 					return (
@@ -152,11 +152,12 @@ export function createWebTools(search: () => SearchProvider | null): Record<stri
 					);
 				}
 				try {
-					return await provider.search(query, count ?? 5);
+					return await provider.search(query, count ?? 5, signal);
 				} catch (err) {
 					return `web_search failed: ${err instanceof Error ? err.message : String(err)}`;
 				}
-			}),
+			// Fork: the keyless Claude engine takes ~15 s and can take longer.
+			}, { timeoutMs: () => 150_000 }),
 		},
 
 		web_fetch: {

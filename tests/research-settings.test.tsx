@@ -59,9 +59,10 @@ it("keyless settings keep Research interactive while search-engine setup retains
 		act(() => { toggle.click(); });
 		assert.equal(written?.tools?.research, false, "the keyless toggle emits the same stored boolean");
 		const engine = document.querySelector<HTMLButtonElement>('[data-testid="search-engine-trigger"]')!;
-		assert.ok(engine.className.includes("cursor-not-allowed"), "search engine preference retains its own key gate");
-		act(() => { engine.click(); });
-		assert.equal(document.querySelector('[data-testid="search-engine-menu"]'), null, "keyless engine preference does not open");
+		// Fork (2026-11-12): the keyless Claude engine keeps the preference
+		// selectable with no search keys at all.
+		assert.ok(!engine.className.includes("cursor-not-allowed"), "Claude (subscription) needs no key");
+		assert.equal(engine.hasAttribute("disabled"), false);
 		assert.ok(document.querySelector('[data-testid="search-engine-row"]')?.textContent?.includes(reason));
 	} finally {
 		act(() => { root.unmount(); });
