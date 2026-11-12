@@ -1,6 +1,6 @@
 /**
  * Problem log (fork, 2026-11-08): every problem the learner works — from any
- * book, zbirka, competition or the Matematika Tracker archive — with its
+ * book, zbirka, competition or the problem archive (Zadaci → Arhiva) — with its
  * attempts, a category (Matematika — škola / takmičenja / Fizika / own) and a
  * re-solve date derived from the latest outcome (overridable by hand).
  * See docs/fork-plans/problem-log-plan.md. Pure: no runtime deps.
@@ -53,7 +53,7 @@ export interface ProblemEntry {
 	branch?: string;
 	/** The course it was (first) worked in. */
 	chatId?: string;
-	/** The Matematika Tracker problem id, for archive problems. */
+	/** The archive problem id (Zadaci → Arhiva), for archive problems. */
 	trackerId?: string;
 	note?: string;
 	attempts: ProblemAttempt[];

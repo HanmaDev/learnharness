@@ -4,9 +4,8 @@
  * YouTube transcripts (always).
  */
 import { mistakeViews, openMistakesText, resolveDate } from "../core";
-import * as fs from "node:fs";
 import { categoryHint, logAttempt } from "./problems.ts";
-import { listTrackerProblems, trackerAvailable, trackerFacets, trackerImageFile, trackerProblem, trackerReference, type TrackerProblem } from "./tracker.ts";
+import { listTrackerProblems, trackerAvailable, trackerFacets, trackerProblem, trackerReference, type TrackerProblem } from "./tracker.ts";
 import { fieldsMatch, parseArchiveQuery, titleFields } from "./tracker-match.ts";
 import { effectiveSettings, stores } from "./stores.ts";
 import { agentAccessMode, webSearchEnabled } from "../core/settings-resolution.ts";
@@ -111,8 +110,20 @@ function trackerLookup(query: string): { text: string; images?: Array<{ data: st
 			};
 		if (hits.length === 1) detail = trackerProblem(hits[0]!.id);
 	}
-	if (!detail) return { text: `No archive problem matches "${q}". Ask the learner for the exact round, school year, grade, category and problem number.` };
-	const img = detail.imageId ? trackerImageFile(detail.imageId) : null;
-	const text = `${trackerReference(detail)} · branch: ${detail.branch ?? "?"} · tags: ${detail.tags.join(", ")} · trackerId: ${detail.id}${detail.solution ? " · an official solution exists (the learner can open it)" : " · no official solution in the archive"}. The statement is the attached image. Log attempts at it with this trackerId and reference "${trackerReference(detail)}".`;
-	return img ? { text, images: [{ data: fs.readFileSync(img.file).toString("base64"), mimeType: img.mime }] } : { text: `${text} (image missing)` };
+	if (!detail) return { text: `No archive problem matches "${q}". Ask the learner for the exact round, school year, grade and problem number.` };
+	const ref = trackerReference(detail);
+	const sol = detail.hasSolution
+		? `## Solution (${detail.officialSolution ? "official" : "NOT official — written later by AI, check it"}) — for you only\nDon't show or paraphrase it before the learner has attempted the problem or asks for it; use it to grade and to give hints.\n\n${detail.solution}${detail.answer ? `\n\nAnswer: ${detail.answer}` : ""}`
+		: "No solution in the archive.";
+	const text = [
+		`${ref} — "${detail.name}" · trackerId: ${detail.id}`,
+		`Area: ${detail.branch ?? "?"}${detail.tags.length ? ` (${detail.tags.join(", ")})` : ""} · difficulty ${detail.difficulty}/5 · ${detail.kind || "?"} · ${detail.source}`,
+		`Log attempts at it with this trackerId and reference "${ref}".`,
+		`## Statement\n\n${detail.statement}`,
+		detail.idea ? `## Key idea (a hint — reveal only when the learner is stuck)\n\n${detail.idea}` : "",
+		sol,
+	]
+		.filter(Boolean)
+		.join("\n\n");
+	return { text };
 }

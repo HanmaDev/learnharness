@@ -18,7 +18,7 @@ export interface AgentAids {
 	logProblem?: (input: LogProblemInput) => string;
 	/** The current category ids/labels, for the tool description. */
 	problemCategories?: string;
-	/** Fork: look a problem up in the Matematika Tracker archive (statement image). */
+	/** Fork: look a problem up in the problem archive (Takmicenja-matematika-B: text, solution, tags). */
 	trackerLookup?: (query: string) => { text: string; images?: Array<{ data: string; mimeType: string }> };
 	/** Fork (2026-11-09): read the learner's Zadaci entries (ids for edits). */
 	problemList?: (filter: ProblemListInput) => string;
@@ -97,7 +97,7 @@ const logProblemInput = Type.Object({
 	branch: Type.Optional(Type.String({ description: "Algebra, Analiza, Geometrija, Kombinatorika, Teorija brojeva, Verovatnoća, Fizika, Ostalo." })),
 	category: Type.Optional(Type.String({ description: "A category id (see the description); omit to use the course's default." })),
 	note: Type.Optional(Type.String({ maxLength: 500, description: "One line: the key idea or what went wrong." })),
-	trackerId: Type.Optional(Type.String({ description: "The Matematika Tracker problem id, for archive problems (from tracker_problem)." })),
+	trackerId: Type.Optional(Type.String({ description: "The archive problem id (trackerId), for archive problems (from tracker_problem)." })),
 });
 
 function createLogProblemTool(log: (i: LogProblemInput) => string, categories: string): AgentTool<typeof logProblemInput> {
@@ -115,7 +115,7 @@ function createLogProblemTool(log: (i: LogProblemInput) => string, categories: s
 }
 
 const trackerInput = Type.Object({
-	query: Type.String({ minLength: 1, maxLength: 200, description: 'The problem: its Tracker id, or a title like "Okružno 2019/2020 4. razred A zadatak 3".' }),
+	query: Type.String({ minLength: 1, maxLength: 200, description: 'The problem: its archive id (trackerId), or a title like "Okružno 2019/2020 4. razred zadatak 3".' }),
 });
 
 function createTrackerTool(lookup: (q: string) => { text: string; images?: Array<{ data: string; mimeType: string }> }): AgentTool<typeof trackerInput> {
@@ -123,9 +123,10 @@ function createTrackerTool(lookup: (q: string) => { text: string; images?: Array
 		name: "tracker_problem",
 		label: "tracker_problem",
 		description:
-			"Look up a competition problem in the learner's Matematika Tracker archive (DMS: opštinsko … IMO, 2002–2026) and SEE its " +
-			"statement (an image). Use it when the learner names an archive problem, so you work on exactly that statement. " +
-			"The official solution is not returned — the learner opens it in Zadaci → Arhiva after attempting.",
+			"Look up a competition problem in the learner's problem archive (Zadaci → Arhiva: DMS math competitions, category B, grades 1–4, " +
+			"opštinsko/okružno/državno, 2002–2026) and read its statement as text, with area, difficulty 1–5, key idea and solution. " +
+			"Use it when the learner names an archive problem, so you work on exactly that statement. The key idea and solution are for " +
+			"you (grading, hints): don't reveal them before the learner has attempted the problem or asks.",
 		parameters: trackerInput,
 		execute: serverExecute("tracker_problem", trackerInput, async ({ query }) => lookup(query)),
 	};
@@ -176,7 +177,7 @@ const problemEditInput = Type.Object({
 	reference: Type.Optional(Type.String({ maxLength: 200, description: 'plan: where exactly, e.g. "117b".' })),
 	category: Type.Optional(Type.String({ description: "plan: a category id; omit for the course default." })),
 	branch: Type.Optional(Type.String({ description: "plan: the area (Algebra, Analiza, …)." })),
-	trackerId: Type.Optional(Type.String({ description: "plan: the Matematika Tracker id, for archive problems." })),
+	trackerId: Type.Optional(Type.String({ description: "plan: the archive problem id (trackerId), for archive problems." })),
 	note: Type.Optional(Type.String({ maxLength: 500, description: "plan: one line — what the problem practises." })),
 });
 

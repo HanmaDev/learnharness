@@ -1,13 +1,16 @@
 "use client";
 /**
- * Fork (problem log): the Arhiva tab — the Matematika Tracker's DMS problems,
- * READ-ONLY (src/server/tracker.ts). Filters, the statement image, the
- * official solution pages from the DMS PDF, and "Zabeleži pokušaj" into the
- * LearnHarness log. Status dots come from the learner's own log only.
+ * Fork (problem log): the Arhiva tab — the DMS competition problems (category
+ * B, Takmicenja-matematika-B), READ-ONLY (src/server/tracker.ts). Filters by
+ * level, grade, area, subarea, difficulty and year; the statement as text with
+ * formulas, the key idea and the solution on request, the original PDF pages
+ * for figures, and "Zabeleži pokušaj" into the LearnHarness log. Status dots
+ * come from the learner's own log only.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { BRANCHES, resolveDate, type ProblemEntry, type ProblemLog } from "@/src/core";
 import { BTN, INPUT, type DialogSeed } from "./shared";
 
@@ -19,20 +22,30 @@ interface ArchiveProblem {
 	grade: number | null;
 	year: string;
 	branch: string | null;
-	imageId: string | null;
-	hasSolution: boolean;
-}
-interface ArchiveDetail extends ArchiveProblem {
-	source: string;
 	tags: string[];
-	solution: { documentId: string; pageStart: number; pageEnd: number } | null;
+	difficulty: number;
+	kind: string;
+	hasSolution: boolean;
+	officialSolution: boolean;
+}
+type Pages = { pageStart: number; pageEnd: number } | null;
+interface ArchiveDetail extends ArchiveProblem {
+	name: string;
+	source: string;
+	statement: string;
+	solution: string;
+	idea: string;
+	answer: string;
+	taskPages: Pages;
+	solutionPages: Pages;
 }
 interface Facets {
 	stages: string[];
-	categories: string[];
 	grades: number[];
 	branches: string[];
+	tags: string[];
 	years: string[];
+	difficulties: number[];
 }
 interface ListResponse {
 	available: boolean;
@@ -41,9 +54,12 @@ interface ListResponse {
 	facets: Facets | null;
 }
 
-type Filters = { stage: string; category: string; grade: string; branch: string; year: string; q: string };
-const EMPTY: Filters = { stage: "", category: "", grade: "", branch: "", year: "", q: "" };
-const FILTER_KEY = "lh:archive-filters";
+type Filters = { stage: string; grade: string; branch: string; tag: string; difficulty: string; year: string; q: string };
+const EMPTY: Filters = { stage: "", grade: "", branch: "", tag: "", difficulty: "", year: "", q: "" };
+// v2: the text archive (2026-11-12) — the old saved filters (category A, …) don't carry over.
+const FILTER_KEY = "lh:archive-filters-v2";
+const DIFFICULTY = ["", "rutinski", "lak", "srednji", "težak", "vrlo težak"];
+const stars = (n: number) => "★".repeat(n) + "☆".repeat(Math.max(0, 5 - n));
 
 function loadFilters(): Filters {
 	try {
@@ -129,7 +145,7 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 	if (error && !data) return <p className="mt-6 text-sm text-muted-foreground">Arhiva ne može da se učita ({error}).</p>;
 	if (!data) return <p className="mt-6 text-sm text-muted-foreground">Učitavam arhivu…</p>;
 	if (!data.available || !data.facets)
-		return <p className="mt-6 text-lg text-muted-foreground">Matematika Tracker nije pronađen na ovom računaru (%APPDATA%\rs.matematika.tracker). Arhiva je dostupna samo kad je on instaliran.</p>;
+		return <p className="mt-6 text-lg text-muted-foreground">Arhiva zadataka nije pronađena (OneDrive\Ucenje\Takmicenja-matematika-B\podaci.json). Pokreni napravi_indeks.py u toj fascikli.</p>;
 
 	const fc = data.facets;
 	const list = [...data.problems, ...more];
@@ -150,9 +166,10 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 		<>
 			<div className="mt-5 flex flex-wrap items-center gap-3">
 				{sel("Nivo", "stage", fc.stages.map((s) => [s, s]))}
-				{sel("Kategorija", "category", fc.categories.map((c) => [c, c]))}
 				{sel("Razred", "grade", fc.grades.map((g) => [String(g), String(g)]))}
 				{sel("Oblast", "branch", fc.branches.map((b) => [b, b]))}
+				{sel("Podoblast", "tag", fc.tags.map((t) => [t, t]))}
+				{sel("Težina", "difficulty", fc.difficulties.map((d) => [String(d), `${stars(d)} ${DIFFICULTY[d] ?? ""}`]))}
 				{sel("Godina", "year", fc.years.map((y) => [y, y]))}
 				<span className="relative min-w-56 flex-1">
 					<SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -181,7 +198,12 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 									>
 										<span className="min-w-0 flex-1">
 											<span className="block text-base font-medium">{p.title}</span>
-											{p.branch && <span className="mt-1 inline-block rounded border border-border px-2 py-px text-sm text-foreground/85">{p.branch}</span>}
+											<span className="mt-1 flex flex-wrap items-center gap-2">
+												{p.branch && <span className="inline-block rounded border border-border px-2 py-px text-sm text-foreground/85">{p.branch}</span>}
+												<span className="text-sm tracking-wider text-warning" title={`težina ${p.difficulty}/5`}>
+													{stars(p.difficulty)}
+												</span>
+											</span>
 										</span>
 										<span className={cn("mt-2 size-2.5 shrink-0 rounded-full", DOT[st])} title={st === "solved" ? "rešen" : st === "again" ? "za ponovno" : "nije rađen"} />
 									</button>
@@ -212,12 +234,12 @@ export function ArchiveTab({ log, onAttempt }: { log: ProblemLog; now: number; o
 	);
 }
 
-/** The Tracker's branch names, as the log's (its "Mešovito/Ostalo" is "Ostalo"). */
+/** The archive's main areas, as the log's branches (anything else is "Ostalo"). */
 const logBranch = (b: string | null) => (!b ? undefined : (BRANCHES as readonly string[]).includes(b) ? b : "Ostalo");
 
 function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: ProblemEntry | undefined; onAttempt: (seed: DialogSeed) => void }) {
 	const [p, setP] = useState<ArchiveDetail | null>(null);
-	const [showSolution, setShowSolution] = useState(false);
+	const [show, setShow] = useState({ idea: false, solution: false, original: false });
 	const [copied, setCopied] = useState(false);
 	useEffect(() => {
 		let live = true;
@@ -239,26 +261,44 @@ function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: Probl
 			/* clipboard off */
 		}
 	};
-	return (
-		<div className="flex h-[calc(100dvh-25rem)] min-h-96 min-w-0 flex-col gap-3 overflow-y-auto rounded-lg border border-border p-3" data-testid="archive-detail">
-			<div className={cn("flex items-start overflow-hidden rounded bg-white p-4", showSolution ? "shrink-0" : "min-h-[30vh] flex-1")}>
-				{p.imageId ? (
-					// eslint-disable-next-line @next/next/no-img-element -- a local route, no optimizer
-					<img src={`/api/tracker/image/${encodeURIComponent(p.imageId)}`} alt={p.title} className="h-auto max-h-[45vh] w-full object-contain object-left-top" data-testid="archive-image" />
-				) : (
-					<p className="w-full p-6 text-center text-zinc-600">Slika zadatka nedostaje.</p>
-				)}
+	const toggle = (k: keyof typeof show) => setShow((s) => ({ ...s, [k]: !s[k] }));
+	const pages = (r: Pages, which: "task" | "solution", label: string) =>
+		r &&
+		Array.from({ length: r.pageEnd - r.pageStart + 1 }, (_, i) => (
+			<div key={`${which}${i}`} className="overflow-hidden rounded border border-border bg-white">
+				{/* eslint-disable-next-line @next/next/no-img-element -- a local route, no optimizer */}
+				<img src={`/api/tracker/solution/${encodeURIComponent(p.id)}?which=${which}&i=${i}`} alt={`${label}, strana ${r.pageStart + i}`} className="block h-auto w-full" />
 			</div>
-			<div className="grid shrink-0 grid-cols-2 gap-3">
-				<button
-					type="button"
-					disabled={!p.solution}
-					onClick={() => setShowSolution((s) => !s)}
-					className={cn(BTN, "py-2.5 text-sm")}
-					title={p.solution ? undefined : "U arhivi nema zvaničnog rešenja"}
-					data-testid="show-solution"
-				>
-					{showSolution ? "Sakrij rešenje" : p.solution ? "Prikaži rešenje" : "Nema rešenja"}
+		));
+	return (
+		<div className="flex h-[calc(100dvh-25rem)] min-h-96 min-w-0 flex-col gap-3 overflow-y-auto rounded-lg border border-border p-4" data-testid="archive-detail">
+			<div className="shrink-0">
+				<h3 className="text-lg font-semibold">{p.name}</h3>
+				<div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+					<span className="tracking-wider text-warning" title={`težina ${p.difficulty}/5`}>
+						{stars(p.difficulty)}
+					</span>
+					<span>{DIFFICULTY[p.difficulty]}</span>
+					{[p.branch, ...p.tags].filter(Boolean).map((t) => (
+						<span key={t} className="rounded border border-border px-2 py-px text-foreground/85">
+							{t}
+						</span>
+					))}
+					{p.kind && <span>· {p.kind}</span>}
+				</div>
+			</div>
+			<div className="shrink-0 text-base" data-testid="archive-statement">
+				<MessageResponse>{p.statement || "_Tekst zadatka nedostaje — vidi original._"}</MessageResponse>
+			</div>
+			<div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4">
+				<button type="button" disabled={!p.idea} onClick={() => toggle("idea")} className={cn(BTN, "py-2.5 text-sm")} data-testid="show-idea">
+					{show.idea ? "Sakrij ideju" : "Ključna ideja"}
+				</button>
+				<button type="button" disabled={!p.hasSolution} onClick={() => toggle("solution")} className={cn(BTN, "py-2.5 text-sm")} data-testid="show-solution">
+					{show.solution ? "Sakrij rešenje" : p.hasSolution ? "Prikaži rešenje" : "Nema rešenja"}
+				</button>
+				<button type="button" disabled={!p.taskPages} onClick={() => toggle("original")} className={cn(BTN, "py-2.5 text-sm")} title="Strana iz originalnog DMS PDF-a (slike, crteži)" data-testid="show-original">
+					{show.original ? "Sakrij original" : "Original (PDF)"}
 				</button>
 				<button
 					type="button"
@@ -269,20 +309,26 @@ function ArchiveDetailPanel({ id, entry, onAttempt }: { id: string; entry: Probl
 					Zabeleži pokušaj
 				</button>
 			</div>
-			{showSolution && p.solution && (
-				<div className="flex flex-col gap-2" data-testid="solution-pages">
-					{Array.from({ length: p.solution.pageEnd - p.solution.pageStart + 1 }, (_, i) => (
-						<div key={i} className="overflow-hidden rounded border border-border bg-white">
-							{/* eslint-disable-next-line @next/next/no-img-element -- a local route, no optimizer */}
-							<img src={`/api/tracker/solution/${encodeURIComponent(p.id)}?i=${i}`} alt={`Rešenje, strana ${p.solution!.pageStart + i}`} className="block h-auto w-full" />
-						</div>
-					))}
+			{show.original && <div className="flex shrink-0 flex-col gap-2">{pages(p.taskPages, "task", "Zadatak")}</div>}
+			{show.idea && p.idea && (
+				<div className="shrink-0 rounded-md border border-success/40 bg-success/10 p-3 text-base" data-testid="archive-idea">
+					<MessageResponse>{p.idea}</MessageResponse>
 				</div>
 			)}
-			<div className="flex shrink-0 flex-wrap items-center gap-3 font-ui text-xs uppercase tracking-widest text-muted-foreground">
+			{show.solution && p.hasSolution && (
+				<div className="flex shrink-0 flex-col gap-2 rounded-md border border-border p-3" data-testid="archive-solution">
+					<p className={cn("font-ui text-xs uppercase tracking-widest", p.officialSolution ? "text-muted-foreground" : "text-warning")}>
+						{p.officialSolution ? "Zvanično rešenje" : "Rešenje nije zvanično (izrađeno naknadno) — proveriti"}
+					</p>
+					<div className="text-base">
+						<MessageResponse>{p.solution + (p.answer ? `\n\n**Odgovor:** ${p.answer}` : "")}</MessageResponse>
+					</div>
+					{p.solutionPages && <div className="flex flex-col gap-2">{pages(p.solutionPages, "solution", "Rešenje")}</div>}
+				</div>
+			)}
+			<div className="mt-auto flex shrink-0 flex-wrap items-center gap-3 font-ui text-xs uppercase tracking-widest text-muted-foreground">
 				<span className="min-w-0 flex-1">
-					Izvor: {(p.source || "DMS").replace(/\s*·\s*none\b/gi, "")}
-					{p.solution ? ` · rešenje str. ${p.solution.pageStart}${p.solution.pageEnd > p.solution.pageStart ? `–${p.solution.pageEnd}` : ""}` : ""}
+					{p.title} · {p.source}
 				</span>
 				<button type="button" onClick={() => void copy()} className={cn(BTN, "normal-case tracking-normal")} title="Kopira oznaku zadatka; nalepi je u sesiju i nastavnik ga otvara">
 					{copied ? "Kopirano" : "Kopiraj za sesiju"}

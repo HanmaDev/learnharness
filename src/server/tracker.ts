@@ -1,63 +1,87 @@
 /**
- * Matematika Tracker as a READ-ONLY problem archive (fork, 2026-11-08): the
- * DMS competition problems (images), their tags, and the official solution
- * pages in the DMS PDFs. Nothing here ever writes to the Tracker — none of its
- * attempts, cards or statuses are used (the learner's log is LearnHarness's).
+ * The competition problem archive, READ-ONLY (fork). Since 2026-11-12 this is
+ * the text archive "Takmicenja-matematika-B" (DMS, category B, grades 1–4,
+ * 2002/03–2025/26): statements and solutions as Markdown + LaTeX, with area,
+ * subareas, difficulty 1–5, type and key idea — built by its own
+ * napravi_indeks.py into podaci.json. It replaced the Matematika Tracker
+ * archive (statement images only); the names here ("tracker", trackerId) are
+ * kept so the learner's log and the routes stay as they were.
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { getHeadless } from "../agent/subagents/headless.ts";
 
-// Fork (OneDrive sync): a computer without the Tracker reads the synced
-// read-only copy the desktop shell points at (LH_TRACKER_DIR).
-const ROOT = () => process.env.LH_TRACKER_DIR || path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "rs.matematika.tracker");
-const DB = () => path.join(ROOT(), "matematika-tracker.sqlite3");
-const MANAGED = () => path.join(ROOT(), "managed");
+const FOLDER = "Takmicenja-matematika-B";
 
-type Row = Record<string, unknown>;
-interface Db {
-	all(sql: string, ...params: unknown[]): Row[];
-	get(sql: string, ...params: unknown[]): Row | undefined;
+/** The archive folder: LH_ARCHIVE_DIR, else OneDrive\Ucenje\…, else Documents\Ucenje\…. */
+export function archiveDir(): string | null {
+	const home = os.homedir();
+	const candidates = [
+		process.env.LH_ARCHIVE_DIR,
+		process.env.OneDrive && path.join(process.env.OneDrive, "Ucenje", FOLDER),
+		path.join(home, "OneDrive", "Ucenje", FOLDER),
+		path.join(home, "Documents", "Ucenje", FOLDER),
+	].filter((d): d is string => !!d);
+	return candidates.find((d) => fs.existsSync(path.join(d, "podaci.json"))) ?? null;
 }
 
-let cached: { db: Db; mtime: number; close: () => void } | null = null;
+/** One problem as napravi_indeks.py writes it. */
+interface RawProblem {
+	id: string;
+	skup: string;
+	godina: string;
+	nivo: string;
+	nivoKey: string;
+	naziv: string;
+	datum: string | null;
+	razred: number;
+	broj: number;
+	naslov: string;
+	oblasti: string[];
+	tezina: number;
+	tip: string;
+	ideja: string;
+	resenje: string;
+	odgovor: string;
+	md: string;
+	pdf: { zadaci: string; resenja?: string };
+	strZadatka: [number, number] | null;
+	strResenja: [number, number] | null;
+	tekst: string;
+	resenjeTekst: string;
+}
 
-/** node:sqlite, read-only (sees the WAL too). Reopened when the file changes. */
-function open(): Db | null {
-	const file = DB();
+let cached: { dir: string; mtime: number; problems: RawProblem[]; byId: Map<string, RawProblem> } | null = null;
+
+function load(): { dir: string; problems: RawProblem[]; byId: Map<string, RawProblem> } | null {
+	const dir = archiveDir();
+	if (!dir) return null;
+	const file = path.join(dir, "podaci.json");
 	let mtime = 0;
 	try {
 		mtime = fs.statSync(file).mtimeMs;
-		const wal = `${file}-wal`;
-		if (fs.existsSync(wal)) mtime = Math.max(mtime, fs.statSync(wal).mtimeMs);
 	} catch {
 		return null;
 	}
-	if (cached && cached.mtime === mtime) return cached.db;
+	if (cached && cached.dir === dir && cached.mtime === mtime) return cached;
 	try {
-		// getBuiltinModule: the bundler leaves it alone (a require/import of
-		// node:sqlite gets rewritten by Turbopack and fails at runtime).
-		const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as unknown as { DatabaseSync: new (p: string, o: { readOnly: boolean }) => { prepare(sql: string): { all(...p: unknown[]): Row[]; get(...p: unknown[]): Row | undefined }; close(): void } };
-		const raw = new DatabaseSync(file, { readOnly: true });
-		const db: Db = { all: (sql, ...p) => raw.prepare(sql).all(...p), get: (sql, ...p) => raw.prepare(sql).get(...p) };
-		// The previous connection (an older file state) is closed, not leaked.
-		try {
-			cached?.close();
-		} catch {
-			/* already closed */
-		}
-		cached = { db, mtime, close: () => raw.close() };
-		return db;
+		const data = JSON.parse(fs.readFileSync(file, "utf8")) as { zadaci?: RawProblem[] };
+		const problems = Array.isArray(data.zadaci) ? data.zadaci : [];
+		cached = { dir, mtime, problems, byId: new Map(problems.map((p) => [p.id, p])) };
+		return cached;
 	} catch (e) {
-		console.warn(`[tracker] cannot open the archive: ${e instanceof Error ? e.message : e}`);
+		console.warn(`[archive] cannot read ${file}: ${e instanceof Error ? e.message : e}`);
 		return null;
 	}
 }
 
 export function trackerAvailable(): boolean {
-	return open() !== null;
+	return load() !== null;
 }
+
+const STAGE: Record<string, string> = { opstinsko: "Opštinsko", okruzno: "Okružno", drzavno: "Državno" };
+const STAGE_ORDER: Record<string, number> = { opstinsko: 0, okruzno: 1, drzavno: 2 };
 
 export interface TrackerProblem {
 	id: string;
@@ -66,9 +90,16 @@ export interface TrackerProblem {
 	category: string;
 	grade: number | null;
 	year: string;
+	/** The main area (Algebra, Geometrija, …). */
 	branch: string | null;
-	imageId: string | null;
+	/** Subareas and a second main area, if any. */
+	tags: string[];
+	difficulty: number;
+	/** "računski" | "dokaz" */
+	kind: string;
 	hasSolution: boolean;
+	/** false = the solution was written later (AI), not the official one. */
+	officialSolution: boolean;
 }
 
 export interface TrackerFilter {
@@ -76,132 +107,157 @@ export interface TrackerFilter {
 	category?: string;
 	grade?: number;
 	branch?: string;
+	tag?: string;
 	year?: string;
+	difficulty?: number;
+	kind?: string;
 	q?: string;
 	limit?: number;
 	offset?: number;
 }
 
-const BASE = `
-	SELECT p.id, p.title, coalesce(p.source_stage,'') AS stage, coalesce(p.source_category,'') AS category,
-	       p.source_grade AS grade, coalesce(p.source_school_year,'') AS year, b.name AS branch,
-	       (SELECT a.id FROM attachments a WHERE a.owner_type='problem' AND a.owner_id=p.id AND a.deleted_at IS NULL ORDER BY a.created_at LIMIT 1) AS imageId,
-	       (SELECT count(*) FROM dms_problem_imports d WHERE d.problem_id=p.id AND d.solution_document_id IS NOT NULL) AS hasSolution
-	FROM problems p LEFT JOIN branches b ON b.id = p.branch_id
-	WHERE p.deleted_at IS NULL`;
+const titleOf = (p: RawProblem) => `${STAGE[p.nivoKey] ?? p.nivo} ${p.godina} · ${p.razred}. razred · kategorija B · zadatak ${p.broj}`;
 
-const toProblem = (r: Row): TrackerProblem => ({
-	id: String(r.id),
-	title: String(r.title ?? ""),
-	stage: String(r.stage ?? ""),
-	category: String(r.category ?? ""),
-	grade: r.grade === null || r.grade === undefined ? null : Number(r.grade),
-	year: String(r.year ?? ""),
-	branch: r.branch ? String(r.branch) : null,
-	imageId: r.imageId ? String(r.imageId) : null,
-	hasSolution: Number(r.hasSolution) > 0,
+const toProblem = (p: RawProblem): TrackerProblem => ({
+	id: p.id,
+	title: titleOf(p),
+	stage: STAGE[p.nivoKey] ?? p.nivo,
+	category: "B",
+	grade: p.razred,
+	year: p.godina,
+	branch: p.oblasti[0] ?? null,
+	tags: p.oblasti.slice(1),
+	difficulty: p.tezina,
+	kind: p.tip,
+	hasSolution: !!p.resenjeTekst.trim(),
+	officialSolution: p.resenje === "zvanično",
 });
 
+const fold = (s: string) =>
+	s
+		.toLowerCase()
+		.normalize("NFKD")
+		.replace(/[̀-ͯ]/g, "")
+		.replace(/đ/g, "dj");
+
 export function listTrackerProblems(f: TrackerFilter): { problems: TrackerProblem[]; total: number } {
-	const db = open();
-	if (!db) return { problems: [], total: 0 };
-	const where: string[] = [];
-	const params: unknown[] = [];
-	if (f.stage) (where.push("p.source_stage = ?"), params.push(f.stage));
-	if (f.category !== undefined && f.category !== "") (where.push("p.source_category = ?"), params.push(f.category));
-	if (f.grade) (where.push("p.source_grade = ?"), params.push(f.grade));
-	if (f.branch) (where.push("b.name = ?"), params.push(f.branch));
-	if (f.year) (where.push("p.source_school_year = ?"), params.push(f.year));
-	if (f.q?.trim()) (where.push("p.title LIKE ?"), params.push(`%${f.q.trim()}%`));
-	const cond = where.length ? ` AND ${where.join(" AND ")}` : "";
+	const a = load();
+	if (!a) return { problems: [], total: 0 };
+	const q = f.q?.trim() ? fold(f.q.trim()) : "";
+	const hits = a.problems.filter(
+		(p) =>
+			(!f.stage || (STAGE[p.nivoKey] ?? p.nivo) === f.stage) &&
+			(!f.category || f.category === "B") &&
+			(!f.grade || p.razred === f.grade) &&
+			(!f.branch || p.oblasti.includes(f.branch)) &&
+			(!f.tag || p.oblasti.includes(f.tag)) &&
+			(!f.year || p.godina === f.year) &&
+			(!f.difficulty || p.tezina === f.difficulty) &&
+			(!f.kind || p.tip === f.kind) &&
+			(!q || fold(`${p.naslov} ${titleOf(p)} ${p.ideja} ${p.tekst}`).includes(q)),
+	);
+	hits.sort((x, y) => (x.godina < y.godina ? 1 : x.godina > y.godina ? -1 : 0) || (STAGE_ORDER[x.nivoKey] ?? 9) - (STAGE_ORDER[y.nivoKey] ?? 9) || x.razred - y.razred || x.broj - y.broj);
 	const limit = Math.min(500, Math.max(1, f.limit ?? 200));
 	const offset = Math.max(0, f.offset ?? 0);
-	const total = Number(db.get(`SELECT count(*) AS n FROM problems p LEFT JOIN branches b ON b.id=p.branch_id WHERE p.deleted_at IS NULL${cond}`, ...params)?.n ?? 0);
-	const rows = db.all(`${BASE}${cond} ORDER BY p.source_school_year DESC, p.source_stage, p.source_category, p.source_grade, p.title LIMIT ? OFFSET ?`, ...params, limit, offset);
-	return { problems: rows.map(toProblem), total };
+	return { problems: hits.slice(offset, offset + limit).map(toProblem), total: hits.length };
 }
 
-export function trackerFacets(): { stages: string[]; categories: string[]; grades: number[]; branches: string[]; years: string[] } {
-	const db = open();
-	if (!db) return { stages: [], categories: [], grades: [], branches: [], years: [] };
-	const col = (sql: string) => db.all(sql).map((r) => r.v).filter((v) => v !== null && v !== "");
+export interface TrackerFacets {
+	stages: string[];
+	categories: string[];
+	grades: number[];
+	branches: string[];
+	tags: string[];
+	years: string[];
+	difficulties: number[];
+	kinds: string[];
+}
+
+const MAIN = ["Algebra", "Analiza", "Geometrija", "Kombinatorika", "Teorija brojeva", "Verovatnoća"];
+
+export function trackerFacets(): TrackerFacets {
+	const a = load();
+	const empty: TrackerFacets = { stages: [], categories: [], grades: [], branches: [], tags: [], years: [], difficulties: [], kinds: [] };
+	if (!a) return empty;
+	const uniq = <T,>(xs: T[]) => [...new Set(xs)];
+	const branches = uniq(a.problems.map((p) => p.oblasti[0]).filter((b): b is string => !!b));
+	const count = new Map<string, number>();
+	for (const p of a.problems) for (const t of p.oblasti.slice(1)) if (!MAIN.includes(t)) count.set(t, (count.get(t) ?? 0) + 1);
 	return {
-		stages: col("SELECT DISTINCT source_stage AS v FROM problems WHERE deleted_at IS NULL ORDER BY 1").map(String),
-		categories: col("SELECT DISTINCT source_category AS v FROM problems WHERE deleted_at IS NULL ORDER BY 1").map(String),
-		grades: col("SELECT DISTINCT source_grade AS v FROM problems WHERE deleted_at IS NULL ORDER BY 1").map(Number),
-		branches: col("SELECT name AS v FROM branches WHERE deleted_at IS NULL ORDER BY position, name").map(String),
-		years: col("SELECT DISTINCT source_school_year AS v FROM problems WHERE deleted_at IS NULL ORDER BY 1 DESC").map(String),
+		stages: ["Opštinsko", "Okružno", "Državno"].filter((s) => a.problems.some((p) => STAGE[p.nivoKey] === s)),
+		categories: ["B"],
+		grades: uniq(a.problems.map((p) => p.razred)).sort(),
+		branches: MAIN.filter((b) => branches.includes(b)).concat(branches.filter((b) => !MAIN.includes(b))),
+		tags: [...count.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).map(([t]) => t),
+		years: uniq(a.problems.map((p) => p.godina)).sort().reverse(),
+		difficulties: uniq(a.problems.map((p) => p.tezina)).sort(),
+		kinds: uniq(a.problems.map((p) => p.tip).filter(Boolean)),
 	};
 }
 
 export interface TrackerProblemDetail extends TrackerProblem {
+	/** The competition's own title, e.g. "Matematika, B kategorija — 2. razred, opštinsko takmičenje, 2022/2023". */
+	name: string;
 	source: string;
-	tags: string[];
-	/** The official solution: a DMS PDF and its pages. */
-	solution: { documentId: string; pageStart: number; pageEnd: number } | null;
-	task: { documentId: string; pageStart: number; pageEnd: number } | null;
+	statement: string;
+	solution: string;
+	idea: string;
+	answer: string;
+	/** The original DMS PDF pages (rendered on request): statement, solution. */
+	taskPages: { pageStart: number; pageEnd: number } | null;
+	solutionPages: { pageStart: number; pageEnd: number } | null;
 }
 
 export function trackerProblem(id: string): TrackerProblemDetail | null {
-	const db = open();
-	if (!db) return null;
-	const r = db.get(`${BASE} AND p.id = ?`, id);
-	if (!r) return null;
-	const imp = db.get("SELECT task_document_id, task_page_start, task_page_end, solution_document_id, solution_page_start, solution_page_end FROM dms_problem_imports WHERE problem_id = ? LIMIT 1", id);
-	const extra = db.get("SELECT coalesce(source_title,'') AS source FROM problems WHERE id = ?", id);
-	const tags = db.all("SELECT tag FROM problem_tags WHERE problem_id = ? ORDER BY position", id).map((t) => String(t.tag));
-	const range = (doc: unknown, a: unknown, b: unknown) => (doc ? { documentId: String(doc), pageStart: Number(a) || 1, pageEnd: Number(b) || Number(a) || 1 } : null);
+	const p = load()?.byId.get(id);
+	if (!p) return null;
+	const pages = (r: [number, number] | null, file: string | undefined) => (r && file ? { pageStart: r[0], pageEnd: r[1] } : null);
 	return {
-		...toProblem(r),
-		source: String(extra?.source ?? ""),
-		tags,
-		task: range(imp?.task_document_id, imp?.task_page_start, imp?.task_page_end),
-		solution: range(imp?.solution_document_id, imp?.solution_page_start, imp?.solution_page_end),
+		...toProblem(p),
+		name: p.naslov,
+		source: `DMS · ${p.naziv} ${p.godina}${p.datum ? ` · ${p.datum}` : ""}`,
+		statement: p.tekst,
+		solution: p.resenjeTekst,
+		idea: p.ideja,
+		answer: p.odgovor,
+		taskPages: pages(p.strZadatka, p.pdf.zadaci),
+		solutionPages: pages(p.strResenja, p.pdf.resenja),
 	};
 }
 
-/** A managed file's path, only if it really lies inside the Tracker's managed folder. */
-function managedFile(stored: unknown, sub: "attachments" | "sources"): string | null {
-	if (typeof stored !== "string" || !stored) return null;
-	const resolved = path.resolve(stored.replace(/\//g, path.sep));
-	const base = path.resolve(MANAGED(), sub);
-	if (!resolved.startsWith(base + path.sep)) return null;
-	return fs.existsSync(resolved) ? resolved : null;
-}
-
-export function trackerImageFile(attachmentId: string): { file: string; mime: string } | null {
-	const db = open();
-	const r = db?.get("SELECT managed_path, mime_type FROM attachments WHERE id = ? AND deleted_at IS NULL", attachmentId);
-	const file = managedFile(r?.managed_path, "attachments");
-	return file ? { file, mime: String(r?.mime_type ?? "image/png") } : null;
-}
-
-export function trackerPdfFile(documentId: string): string | null {
-	const db = open();
-	const r = db?.get("SELECT managed_path FROM dms_source_documents WHERE id = ?", documentId);
-	return managedFile(r?.managed_path, "sources");
-}
-
-/** A short reference like "Okružno 2019/2020 · 4A · zadatak 3" for the log. */
+/** A short reference like "Okružno 2019/2020 · 4. razred · kategorija B · zadatak 3" for the log. */
 export function trackerReference(p: TrackerProblem): string {
-	return p.title || [p.stage, p.year, p.grade ? `${p.grade}${p.category}` : p.category].filter(Boolean).join(" · ");
+	return p.title;
+}
+
+/** The set's PDF (statement or solution), only if it lies inside the archive folder. */
+export function trackerPdfFile(problemId: string, which: "task" | "solution"): string | null {
+	const a = load();
+	const p = a?.byId.get(problemId);
+	const rel = which === "task" ? p?.pdf.zadaci : p?.pdf.resenja;
+	if (!a || !rel) return null;
+	const base = path.resolve(a.dir);
+	const file = path.resolve(base, rel);
+	if (!file.startsWith(base + path.sep)) return null;
+	return fs.existsSync(file) ? file : null;
 }
 
 const pageCache = new Map<string, Buffer>();
 
 /**
- * One page of a problem's official solution as a PNG (index 0 = its first
- * solution page), rendered from the DMS PDF in-process (pdfjs + Skia) — the
- * app shows exactly the solution pages, no PDF viewer needed.
+ * One page of the original DMS PDF as a PNG — the statement page(s) or the
+ * official solution page(s); index 0 = the first one. Rendered in-process
+ * (pdfjs + Skia), so figures can be seen without a PDF viewer.
  */
-export async function trackerSolutionPage(problemId: string, index: number): Promise<Buffer | null> {
+export async function trackerSolutionPage(problemId: string, index: number, which: "task" | "solution" = "solution"): Promise<Buffer | null> {
 	const p = trackerProblem(problemId);
-	if (!p?.solution || !Number.isInteger(index) || index < 0) return null;
-	const page = p.solution.pageStart + index;
-	if (page > p.solution.pageEnd) return null;
-	const pdf = trackerPdfFile(p.solution.documentId);
+	const r = which === "task" ? p?.taskPages : p?.solutionPages;
+	if (!p || !r || !Number.isInteger(index) || index < 0) return null;
+	const page = r.pageStart + index;
+	if (page > r.pageEnd) return null;
+	const pdf = trackerPdfFile(problemId, which);
 	if (!pdf) return null;
-	const key = `${p.solution.documentId}:${page}`;
+	const key = `${pdf}:${page}`;
 	const hit = pageCache.get(key);
 	if (hit) return hit;
 	const [out] = await getHeadless().renderPdfPages(pdf, [page], { dpi: 140 });

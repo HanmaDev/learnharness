@@ -2,12 +2,14 @@ import { trackerSolutionPage } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
-/** Fork (Tracker archive): GET ?i=<n> — the n-th page of a problem's official solution, as a PNG. */
+/** Fork (problem archive): GET ?i=<n>&which=task|solution — the n-th original PDF page of a problem's statement or official solution, as a PNG. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { id } = await params;
-	const i = Number(new URL(req.url).searchParams.get("i") ?? 0);
+	const u = new URL(req.url).searchParams;
+	const i = Number(u.get("i") ?? 0);
+	const which = u.get("which") === "task" ? "task" : "solution";
 	try {
-		const png = await trackerSolutionPage(id, i);
+		const png = await trackerSolutionPage(id, i, which);
 		if (!png) return new Response("Not found", { status: 404 });
 		return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", "cache-control": "private, max-age=3600" } });
 	} catch (e) {
